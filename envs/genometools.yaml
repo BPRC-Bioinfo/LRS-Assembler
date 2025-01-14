@@ -1,0 +1,7 @@
+name: genometools
+channels:
+ - bioconda
+ - conda-forge  
+dependencies:
+ - genometools-genometools=1.6.5
+
