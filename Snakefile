@@ -1,102 +1,112 @@
 import pandas as pd
+from glob import glob
 
-CHROMOSOMES = list(range(1,21)) + list("XY")
-#CHROMOSOMES.append("Un")
+configfile: "configs/run-config.yaml"
+REF = config['reference']
 
 # Identify input files
-NSAMPLES, NANOPORE, = glob_wildcards("raws/{sample}/nanopore/{files}.fastq.gz")
-PSAMPLES, PACBIO ,= glob_wildcards("raws/{sample}/pacbio/{file}.bam")
+NSAMPLES,NANOPORE, = glob_wildcards("raws/{sample}/nanopore/{files}.fastq.gz")
+PSAMPLES,PACBIO, = glob_wildcards("raws/{sample}/pacbio/{file}.bam")
+
 SAMPLES = set(NSAMPLES + PSAMPLES)
 
-samplesdict={}
-# Loop through folder to identify normal and compressed files
-for sample in SAMPLES:
-    samplesdict[sample]={}
-    BAM, = glob_wildcards("raws/"+ sample + "/pacbio/{bam}.bam")
-    samplesdict[sample]['pacbio'] = BAM
-    FASTQ, = glob_wildcards("raws/"+ sample + "/nanopore/{fastq}.fastq.gz")
-    samplesdict[sample]['nanopore'] = FASTQ
+def get_filenames(pattern):
+    return [os.path.splitext(os.path.basename(f))[0] for f in glob(pattern)]
 
-# Function to extract fastq files
+# Create a dictionary to hold the presence of files without path and extension
+samplesdict = {
+    sample: {
+        'pacbio': get_filenames(f"raws/{sample}/pacbio/*.bam"),
+        'nanopore': get_filenames(f"raws/{sample}/nanopore/*.fastq.gz")
+    }
+    for sample in SAMPLES
+}
+
+# Determine the method for each sample
+def final_outcome(sample):
+    pacbio_present = bool(samplesdict[sample]['pacbio'])
+    nanopore_present = bool(samplesdict[sample]['nanopore'])
+    if pacbio_present and nanopore_present:
+        return "hybridPN"
+    elif pacbio_present:
+        return "pacbio"
+    elif nanopore_present:
+        return "nanopore"
+
+sample_to_outcome = {sample: final_outcome(sample) for sample in SAMPLES}
+
+# Convert dictionary to data frame
+data_df = pd.DataFrame.from_dict(sample_to_outcome, orient='index', columns=['Assembly']).reset_index()
+data_df.columns = ['Sample', 'Assembly']
+
+# Create DataFrame from references list
+df_references = pd.DataFrame({'Reference': REF})
+
+# Create cartesian product of samples and references
+df_final = pd.merge(data_df.assign(key=1), df_references.assign(key=1), on='key').drop('key', axis=1)
+
+# Condition if no ref
+print(df_final)
+
+# Function to extract raw files
 def extractFastq(dir,fastqType):
     return samplesdict[dir][fastqType]
 
-# Identify sequencing machines
-MACHINES = []
-for key, inner_dict in samplesdict.items():
-    for inner_key, inner_list in inner_dict.items():
-        if inner_list:
-            MACHINES.append(inner_key)
-
-# Create new list
-ASSEMBLIES = MACHINES.copy()
-if "pacbio" in MACHINES and "nanopore" in MACHINES: 
-    ASSEMBLIES.append("pacnano")
-
 wildcard_constraints:
     sample="|".join(SAMPLES),
-    chr="|".join(map(str,CHROMOSOMES)),
+    hap = "hap1|hap2"
+
+KVALS = [24,32,40]
+WVALS = [100, 250, 500]
 
 rule all:
     input:
-        expand("results/{sample}/de_novo/hifiasm/{sample}_pacnano_hifiasmUL.bp.p_ctg.gfa", sample = SAMPLES),
-#        expand("results/{sample}/{sample}_{machine}_5000.fastq.gz", sample = SAMPLES, machine = MACHINES),
-#        expand("results/{sample}/Assemblies/{sample}_{machine}_chrRef_{assembler}.fa", sample = SAMPLES, machine = MACHINES, assembler = ["hifiasm","flye"]),
-#        expand("results/{sample}/Assemblies/{sample}_pacnano_chrRef_{assemblerUL}.fa", sample = SAMPLES, assemblerUL = ["hifiasmUL","flyeUL"]),
-#        expand("results/{sample}/Assemblies/{sample}_{machine}_denovo_hifiasm.fa", sample = SAMPLES, machine = MACHINES),
+        expand("results/{sample}/info/{sample}_{method}_denovo_ntlink_ragtag_{ref}_stats.csv", zip, sample=df_final['Sample'], method=df_final['Assembly'], ref=df_final['Reference']),
 
-#        expand("results/{sample}/de_novo/flye/{sample}_{machine}_flye/assembly.fasta", sample = SAMPLES, machine = MACHINES),
-
-#        expand("results/{sample}/chr{chr}/{sample}_{machine}_chr{chr}.fastq.gz", sample = SAMPLES, machine = MACHINES, chr = CHROMOSOMES),
-#        expand("results/{sample}/unmapped/{sample}_{machine}_unmapped.fastq.gz", sample = SAMPLES, machine = MACHINES),
-#        expand("results/{sample}/assemblies_chrs/hifiasm/{sample}_{machine}_chr{chr}_hifiasm.fa", sample = SAMPLES, machine = MACHINES, chr = CHROMOSOMES),
-        #expand("results/{sample}/assemblies_chrs/hifiasm/{sample}_pacnano_chr{chr}_hifiasm.fa", sample = SAMPLES, chr = CHROMOSOMES),
-#        expand("results/{sample}/assemblies_chrs/flye/chr{chr}/{machine}/assembly.fasta", sample = SAMPLES, machine = MACHINES, chr = CHROMOSOMES),
-#        expand("results/{sample}/assemblies_chrs/flye/chr{chr}/pacnano/assembly.fasta", sample = SAMPLES, chr = CHROMOSOMES),
-#        expand("results/{sample}/Assemblies/{sample}_pacnano_chrRef_flye.fa", sample = SAMPLES),
-#        expand("results/{sample}/assemblies_chrs/hifiasm/{sample}_{machine}_chr7_hifiasm.fa", sample = SAMPLES, machine = MACHINES, chr = CHROMOSOMES),
-#        expand("results/{sample}/assemblies_chrs/hifiasm/{sample}_pacnano_chr7_hifiasm.fa", sample = SAMPLES, chr = CHROMOSOMES),
-#        expand("results/{sample}/assemblies_chrs/flye/chr7/{machine}/assembly.fasta", sample = SAMPLES, machine = MACHINES, chr = CHROMOSOMES),
-#        expand("results/{sample}/assemblies_chrs/flye/chr7/pacnano/assembly.fasta", sample = SAMPLES, chr = CHROMOSOMES),
-
-rule refDownload:
+rule refPrepare:
     output:
-        "Mmul10/GCA_003339765.3_Mmul_10_genomic.fna",
-        "Mmul10/GCA_003339765.3_Mmul_10_assembly_report.txt"
-    params:
-        dir = "Mmul10/",
-        gz = "Mmul10/GCA_003339765.3_Mmul_10_genomic.fna.gz"
-    shell:
-        """
-        wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/003/339/765/GCA_003339765.3_Mmul_10/GCA_003339765.3_Mmul_10_genomic.fna.gz -P {params.dir}
-        gunzip {params.gz}
-        wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/003/339/765/GCA_003339765.3_Mmul_10/GCA_003339765.3_Mmul_10_assembly_report.txt -P {params.dir}
-        """
-
-rule extractChromosomes:
-    input:
-        fa = ancient("Mmul10/GCA_003339765.3_Mmul_10_genomic.fna"),
-        report = ancient("Mmul10/GCA_003339765.3_Mmul_10_assembly_report.txt")
-    output:
-        fa = temp("Mmul10/Mmul10_chr{chr}.fasta"),
-        temp = temp("Mmul10/Mmul_chr{chr}.txt")
+        zip = temp("{ref}.zip"),
+        fa = "genomes/{ref}/{ref}.fna",
+        gff = "genomes/{ref}/{ref}.gff",
+        json = "genomes/{ref}/{ref}.info"
     conda:
-        "envs/seqkit.yaml"
+        "../envs/datasets.yaml"
+    params:
+        rm = "genomes/README.md",
+        json = "genomes/ncbi_dataset/data/assembly_data_report.jsonl",
+        json2 = "genomes/ncbi_dataset/data/dataset_catalog.json",
+        dir = directory("genomes/ncbi_dataset/data/{ref}"),
+    benchmark:
+        "pipe_benchmarks/00_{ref}_download.bench"
     shell:
         """
-        awk -F'\t' -v var={wildcards.chr} '$1=="chr"var {{print $5}}' {input.report} > {output.temp}
-        awk -F'\t' -v var={wildcards.chr} '$1~"chr"var"_" {{print $5}}' {input.report} >> {output.temp}
-        seqkit grep -f {output.temp} {input.fa} | sed "s/>/>chr{wildcards.chr}_/g" > {output.fa}
+        if [[ {wildcards.ref} != "none" ]]; then
+            datasets download genome accession {wildcards.ref} --filename {output.zip} --include gff3,genome,seq-report
+            unzip {output.zip} -d "genomes"
+            # More than one fna?
+            mv genomes/ncbi_dataset/data/{wildcards.ref}/{wildcards.ref}*.fna {output.fa}
+            mv genomes/ncbi_dataset/data/{wildcards.ref}/genomic.gff {output.gff}
+            mv genomes/ncbi_dataset/data/{wildcards.ref}/sequence_report.jsonl {output.json}
+            rm -r {params}
+        else
+            mkdir -p {params.dir}
+            touch {output}
+            rm -r {params.dir}
+        fi
         """
 
-rule Mmul10:
+rule pacbio_index:
     input:
-        expand("Mmul10/Mmul10_chr{chr}.fasta", chr = CHROMOSOMES)
+        bam = "raws/{sample}/pacbio/{pacbio}.bam",
     output:
-        "Mmul10/Mmul10_chrs.fasta"
+        pbi = "raws/{sample}/pacbio/{pacbio}.bam.pbi",
+    conda:
+        "../envs/pbtk.yaml"
+    benchmark:
+        "pipe_benchmarks/01_{sample}_{pacbio}_index.bench"
     shell:
         """
-        cat {input} > {output}
+        pbindex {input.bam}
         """
 
 rule pacbio_bamToFastq:
@@ -106,9 +116,9 @@ rule pacbio_bamToFastq:
     output:
         temp("fastq/{sample}_{pacbio}.fastq.gz"),
     conda:
-        "envs/bam2fastx.yaml"
+        "../envs/bam2fastx.yaml"
     benchmark:
-        "benchmarks/01_{sample}_{pacbio}_bam2fastq.time"
+        "pipe_benchmarks/01_{sample}_{pacbio}_bam2fastq.bench"
     shell:
         """
         bam2fastq -o fastq/{wildcards.sample}_{wildcards.pacbio} {input.bam}
@@ -121,7 +131,9 @@ rule pacbio_input:
         "results/{sample}/info/{sample}_pacbio_raws.txt"
     shell:
         """
-        echo {input} | tr " " "\n" > {output}
+        for i in {input}; do
+            echo $i
+        done > {output}
         """
 
 rule pacbio_combineFastq:
@@ -129,7 +141,9 @@ rule pacbio_combineFastq:
         files = lambda wildcards: expand("fastq/{sample}_{pacbio}.fastq.gz", sample = wildcards.sample, pacbio = extractFastq(wildcards.sample, "pacbio")),
         list = "results/{sample}/info/{sample}_pacbio_raws.txt"
     output:
-        "results/{sample}/raws/{sample}_pacbio.fastq.gz"
+        temp("results/{sample}/raws/{sample}_pacbio.fastq.gz")
+    benchmark:
+        "pipe_benchmarks/01_{sample}_pacbio_fastq_raw.bench"
     shell:
         """
         cat {input.files} > {output}
@@ -137,310 +151,90 @@ rule pacbio_combineFastq:
 
 rule nanopore_input:
     input:
-        lambda wildcards: expand("raws/{sample}/nanopore/{nano}.fastq.gz", sample = wildcards.sample, nano = extractFastq(wildcards.sample, "nanopore")),
+        lambda wildcards: expand("raws/{sample}/nanopore/{nano}.gz", sample = wildcards.sample, nano = extractFastq(wildcards.sample, "nanopore")),
     output:
         "results/{sample}/info/{sample}_nanopore_raws.txt"
+    benchmark:
+        "pipe_benchmarks/01_{sample}_pacbio_fastq_input.bench"
     shell:
         """
         echo {input} | tr " " "\n" > {output}
         """
 
-rule nanopore_fastq:
+rule nanopore_combineFastq:
     input:
-        files = lambda wildcards: expand("raws/{sample}/nanopore/{nano}.fastq.gz", sample = wildcards.sample, nano = extractFastq(wildcards.sample, "nanopore")),
+        files = lambda wildcards: expand("raws/{sample}/nanopore/{nano}.gz", sample = wildcards.sample, nano = extractFastq(wildcards.sample, "nanopore")),
         list = "results/{sample}/info/{sample}_nanopore_raws.txt"
     output:
-        "results/{sample}/raws/{sample}_nanopore.fastq.gz"
+        temp("results/{sample}/raws/{sample}_nanopore.fastq.gz")
+    benchmark:
+        "pipe_benchmarks/01_{sample}_nanopore_fastq_raw.bench"
     shell:
         """
         cat {input.files} > {output}
         """
 
-rule rawReadStats:
+rule filterReads:
     input:
-        "results/{sample}/raws/{sample}_{machine}.fastq.gz",
+        fq = "results/{sample}/raws/{sample}_{seqMachine}.fastq.gz",
     output:
-        "results/{sample}/info/{sample}_{machine}_stat_raw.txt"
+        "results/{sample}/{sample}_{seqMachine}_5000.fastq.gz"
+    wildcard_constraints:
+        seqMachine="(nanopore|pacbio)"
     conda:
-        "envs/seqkit.yaml"
-    shell:
-        """
-        seqkit stat {input} > {output}
-        """
-
-rule shortReadsFilter:
-    input:
-        stat = "results/{sample}/info/{sample}_{machine}_stat_raw.txt",
-        fq = "results/{sample}/raws/{sample}_{machine}.fastq.gz",
-    output:
-        "results/{sample}/{sample}_{machine}_5000.fastq.gz"
-        #temp("results/{sample}/{sample}_{machine}_5000.fastq.gz")
-    conda:
-        "envs/seqkit.yaml"
+        "../envs/seqkit.yaml"
     benchmark:
-        "benchmarks/02_{sample}_{machine}_readsFilter.time"
+        "pipe_benchmarks/01_{sample}_{seqMachine}_fastq_filter.bench"
+    threads: 5
     shell:
         """
         # Filter with read length
-        seqkit seq -m 5000 {input.fq} | seqkit rmdup -s -o {output}
+        seqkit sana {input.fq} | seqkit seq -m 5000 | seqkit rmdup -s -o {output}
         """
 
-rule filteredReadStats:
+rule readStatsRaw:
     input:
-        "results/{sample}/{sample}_{machine}_5000.fastq.gz"
+        raw = "results/{sample}/raws/{sample}_{seqMachine}.fastq.gz",
     output:
-        "results/{sample}/info/{sample}_{machine}_5000_stat_filtered.txt"
+        raw = "results/{sample}/info/{sample}_{seqMachine}_stat_raw.txt",
     conda:
-        "envs/seqkit.yaml"
-    shell:
-        """
-        seqkit stat {input} > {output}
-        """
-
-rule refMapping:
-    input:
-        info = "results/{sample}/info/{sample}_{machine}_5000_stat_filtered.txt",
-        fq = "results/{sample}/{sample}_{machine}_5000.fastq.gz",
-        ref = "Mmul10/Mmul10_chrs.fasta"
-    output:
-        temp("{sample}_{machine}_Mmul10.sam")
-    conda:
-        "envs/minimap2.yaml"
-    threads: 20
-    log:
-        "logs/03_{sample}_{machine}_mapMmul10.log"
+        "../envs/seqkit.yaml"
     benchmark:
-        "benchmarks/03_{sample}_{machine}_Mmul10.time"
+        "pipe_benchmarks/01_{sample}_{seqMachine}_fastq_raw_stats.bench"
+    threads: 5
     shell:
         """
-        if [[ "{wildcards.machine}" == "pacbio" ]]; then
-            minimap2 -ax map-hifi -t {threads} {input.ref} {input.fq} > {output} 2> {log}
-        elif [[ "{wildcards.machine}" == "nanopore" ]]; then
-            minimap2 -ax map-ont -t {threads} {input.ref} {input.fq} > {output} 2> {log}
-        fi
+        seqkit stats --threads {threads} {input.raw} > {output.raw}
         """
 
-rule bamSort:
+rule readStatsFiltered:
     input:
-        "{sample}_{machine}_Mmul10.sam"
+        filtered = "results/{sample}/{sample}_{seqMachine}_5000.fastq.gz"
     output:
-        bam = temp("{sample}_{machine}_Mmul10.bam"),
-        sort = "results/{sample}/{sample}_{machine}_sorted.bam",
-        bai = "results/{sample}/{sample}_{machine}_sorted.bam.bai",
+        filtered = "results/{sample}/info/{sample}_{seqMachine}_stat_filtered.txt",
+    wildcard_constraints:
+        seqMachine="(nanopore|pacbio)"
     conda:
-        "envs/minimap2.yaml"
-    threads: 8
+        "../envs/seqkit.yaml"
     benchmark:
-        "benchmarks/04_{sample}_{machine}_mapMmul10_sort.time"
+        "pipe_benchmarks/01_{sample}_{seqMachine}_fastq_filter_stats.bench"
+    threads: 5
     shell:
         """
-        # -b output bam -h include header -S sam_input -o output
-        samtools view -@ {threads} -bh {input} > {output.bam}
-        samtools sort -@ {threads} -o {output.sort} {output.bam}
-        samtools index {output.sort}
+        seqkit stats --threads {threads} {input.filtered} > {output.filtered}
         """
 
-rule unmappedReads:
+rule readStatsPacNano:
     input:
-        bam = "results/{sample}/{sample}_{machine}_sorted.bam",
-        bai = "results/{sample}/{sample}_{machine}_sorted.bam.bai",
+        pacraw = "results/{sample}/info/{sample}_nanopore_stat_raw.txt",
+        pacfiltered = "results/{sample}/info/{sample}_nanopore_stat_filtered.txt",
+        nanoraw = "results/{sample}/info/{sample}_pacbio_stat_raw.txt",
+        nanofiltered = "results/{sample}/info/{sample}_pacbio_stat_filtered.txt",
     output:
-        bam = temp("results/{sample}/{sample}_{machine}_unmapped.bam"),
-        bai = temp("results/{sample}/{sample}_{machine}_unmapped.bam.bai"),
-        fq = "results/{sample}/unmapped/{sample}_{machine}_unmapped.fastq.gz",
-    conda:
-        "envs/minimap2.yaml"
-    threads: 8
-    shell:
-        """
-        samtools view -b -f 4 {input.bam} > {output.bam}
-        samtools index {output.bam}
-        samtools fastq -@ {threads} -0 {output.fq} {output.bam}
-        """
-
-rule bamInfo:
-    input:
-        sort = ancient("results/{sample}/{sample}_{machine}_sorted.bam"),
-        bai = ancient("results/{sample}/{sample}_{machine}_sorted.bam.bai"),
-    output:
-        chr = "results/{sample}/info/{sample}_{machine}_readsMappedChrs.txt",
-        cov = "results/{sample}/info/{sample}_{machine}_averageCoverage.txt",
-    conda:
-        "envs/minimap2.yaml"
-    shell:
-        """
-        samtools idxstats {input.sort} > {output.chr} 
-        samtools depth {input.sort} | awk '{{sum+=$3}} END {{ print "{wildcards.sample} {wildcards.machine} genome_cov_avg = ",sum/NR}}' > {output.cov}
-        """
-
-checkpoint separateChrs:
-    input:
-        bam = "results/{sample}/{sample}_{machine}_sorted.bam",
-        info = "results/{sample}/info/{sample}_{machine}_readsMappedChrs.txt",
-        temp = "Mmul10/Mmul_chr{chr}.txt"
-    output:
-        directory("temp/{sample}_{machine}_{chr}")
-    conda:
-        "envs/minimap2.yaml"
-    threads: 8
-    benchmark:
-        "benchmarks/05_{sample}_{machine}_chr{chr}.time"
-    shell:
-        """
-        mkdir -p {output}
-        for i in $(cat {input.temp}); do
-            # Extract individual chrs
-            samtools view -b {input.bam} "chr"{wildcards.chr}"_"$i > {output}/$i".bam"
-            #nummap=$(samtools view -h {output}/$i".bam" | grep -v "@" | wc -l || true)
-            #if [[ $nummap == "0" ]]; then
-            #    rm {output}/$i".bam"
-            #fi
-        done
-        """
-
-def combineChrFragments(wildcards):
-    outdir = checkpoints.separateChrs.get(**wildcards).output[0]
-    bams = glob_wildcards(os.path.join(outdir, "{bam}.bam")).bam
-    #print (bams)
-    return expand(os.path.join(outdir, "{bam}.bam"),
-        bam = bams)
-
-rule rejoinChrs:
-    input:
-        combineChrFragments
-    output:
-        temp("{sample}_{machine}_chr{chr}.bam"),
-    conda:
-        "envs/minimap2.yaml"
-    threads: 8
-    shell:
-        """
-        ulimit -Sn 4096
-        samtools merge -@ {threads} -o {output} {input} 
-        """
-
-rule bamInfoChrs:
-    input:
-        "{sample}_{machine}_chr{chr}.bam",
-    output:
-        temp("results/{sample}/info/{sample}_{machine}_chr{chr}_averageCoverage.txt"),
-    conda:
-        "envs/minimap2.yaml"
-    shell:
-        """
-        samtools depth {input} | awk '{{sum+=$3}} END {{ print "{wildcards.sample} {wildcards.machine} chr{wildcards.chr}_cov_avg = ",sum/NR}}' > {output}
-        """
-
-rule averageCovChrs:
-    input:
-        expand("results/{{sample}}/info/{{sample}}_{{machine}}_chr{chr}_averageCoverage.txt", chr = CHROMOSOMES),
-    output:
-        "results/{sample}/info/{sample}_{machine}_chrsAverageCoverage.txt",
+        "results/{sample}/info/{sample}_hybridPN_5000_stat_filtered.txt"
     shell:
         """
         cat {input} > {output}
-        """
-
-rule chrFastq:
-    input:
-        bam = "{sample}_{machine}_chr{chr}.bam",
-        cov = "results/{sample}/info/{sample}_{machine}_chrsAverageCoverage.txt",
-    output:
-        "results/{sample}/chr{chr}/{sample}_{machine}_chr{chr}.fastq.gz",
-    conda:
-        "envs/minimap2.yaml"
-    threads: 8
-    benchmark:
-        "benchmarks/06_{sample}_{machine}_chr{chr}_fastq.time"
-    shell:
-        """
-        # Extract fastq
-        samtools fastq -@ {threads} -0 {output} {input.bam}
-        """
-
-rule hifiasmChr:
-    input:
-        "results/{sample}/chr{chr}/{sample}_{machine}_chr{chr}.fastq.gz",
-    output:
-        "results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_{machine}_chr{chr}_hifiasm.bp.p_ctg.gfa",
-        temp("results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_{machine}_chr{chr}_hifiasm.ec.bin"),
-        temp("results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_{machine}_chr{chr}_hifiasm.ovlp.reverse.bin"),
-        temp("results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_{machine}_chr{chr}_hifiasm.ovlp.source.bin"),
-    conda:
-        "envs/hifiasm.yaml"
-    log:
-        "logs/07_{sample}_{machine}_chr{chr}_hifiasm.log"
-    threads: 20
-    benchmark:
-        "benchmarks/07_{sample}_{machine}_chr{chr}_hifiasm.time"
-    shell:
-        """
-        hifiasm -o results/{wildcards.sample}/assemblies_chrs/hifiasm/chr{wildcards.chr}/{wildcards.sample}_{wildcards.machine}_chr{wildcards.chr}_hifiasm -t {threads} {input} 2> {log}
-        """
-
-rule hifiasmChrGfaToFasta:
-    input:
-        ancient("results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_{machine}_chr{chr}_hifiasm.bp.p_ctg.gfa")
-    output:
-        "results/{sample}/assemblies_chrs/hifiasm/{sample}_{machine}_chr{chr}_hifiasm.fa"
-    shell:
-        """
-        awk '/^S/{{print ">"$2;print $3}}' {input} | sed "s/ptg/{wildcards.sample}_{wildcards.machine}_chr{wildcards.chr}_hifiasm_/g" > {output}
-        """
-
-rule hifiasmUlChr:
-    input:
-        nano = "results/{sample}/chr{chr}/{sample}_nanopore_chr{chr}.fastq.gz",
-        pac = "results/{sample}/chr{chr}/{sample}_pacbio_chr{chr}.fastq.gz",
-    output:
-        "results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_pacnano_chr{chr}_hifiasmUL.bp.p_ctg.gfa"
-    conda:
-        "envs/hifiasm.yaml"
-    log:
-        "logs/07_{sample}_pacnano_chr{chr}_hifiasmUL.log"
-    threads: 20
-    benchmark:
-        "benchmarks/07_{sample}_pacnano_chr{chr}_hifiasmUL.time"
-    shell:
-        """
-        hifiasm -o results/{wildcards.sample}/assemblies_chrs/hifiasm/chr{wildcards.chr}/{wildcards.sample}_pacnano_chr{wildcards.chr}_hifiasmUL -t {threads} --ul {input.nano}  {input.pac} 2> {log}
-        """
-
-rule hifiasmULChrGfaToFasta:
-    input:
-        ancient("results/{sample}/assemblies_chrs/hifiasm/chr{chr}/{sample}_pacnano_chr{chr}_hifiasmUL.bp.p_ctg.gfa")
-    output:
-        "results/{sample}/assemblies_chrs/hifiasm/{sample}_pacnano_chr{chr}_hifiasm.fa"
-    shell:
-        """
-        awk '/^S/{{print ">"$2;print $3}}' {input} | sed "s/ptg/{wildcards.sample}_pacnano_chr{wildcards.chr}_hifiasmUL_/g" > {output}
-        """
-
-rule hifiasmDeNovo:
-    input:
-        "results/{sample}/{sample}_{machine}_5000.fastq.gz",
-    output:
-        "results/{sample}/de_novo/hifiasm/{sample}_{machine}_hifiasm.bp.p_ctg.gfa"
-    conda:
-        "envs/hifiasm.yaml"
-    log:
-        "logs/07_{sample}_{machine}_denovo_hifiasm.log"
-    threads: 40
-    benchmark:
-        "benchmarks/07_{sample}_{machine}_denovo_hifiasm.time"
-    shell:
-        """
-        hifiasm -o results/{wildcards.sample}/de_novo/hifiasm/{wildcards.sample}_{wildcards.machine}_hifiasm -t {threads} {input} 2> {log}
-        """
-
-rule hifiasmDenovoGfaToFasta:
-    input:
-        ancient("results/{sample}/de_novo/hifiasm/{sample}_{machine}_hifiasm.bp.p_ctg.gfa")
-    output:
-        "results/{sample}/Assemblies/{sample}_{machine}_denovo_hifiasm.fa"
-    shell:
-        """
-        awk '/^S/{{print ">"$2;print $3}}' {input} | sed "s/ptg/{wildcards.sample}_{wildcards.machine}_denovo_hifiasm_/g" > {output}
         """
 
 rule hifiasmULDeNovo:
@@ -448,323 +242,549 @@ rule hifiasmULDeNovo:
         nano = "results/{sample}/{sample}_nanopore_5000.fastq.gz",
         pac = "results/{sample}/{sample}_pacbio_5000.fastq.gz",
     output:
-        "results/{sample}/de_novo/hifiasm/{sample}_pacnano_hifiasmUL.bp.p_ctg.gfa"
+        prima = "results/{sample}/de_novo/hifiasm/{sample}_hybridPN.bp.p_ctg.gfa",
+        hap1 = "results/{sample}/de_novo/hifiasm/{sample}_hybridPN.bp.hap1.p_ctg.gfa",
+        hap2 = "results/{sample}/de_novo/hifiasm/{sample}_hybridPN.bp.hap2.p_ctg.gfa",
     conda:
-        "envs/hifiasm.yaml"
+        "../envs/hifiasm.yaml"
     log:
-        "logs/07_{sample}_pacnano_hifiasm_denovo.log"
-    threads: 40
+        "logs/01_{sample}_hybridPN_hifiasm_denovo.log"
+    threads: 20
     benchmark:
-        "benchmarks/07_{sample}_pacnano_hifiasm_denovo.time"
+        "pipe_benchmarks/02_{sample}_hybridPN_hifiasm_denovo_assembly.bench"
     shell:
         """
-        hifiasm -o results/{wildcards.sample}/de_novo/hifiasm/{wildcards.sample}_pacnano_hifiasmUL -t {threads} --ul {input.nano} {input.pac} 2> {log}
+        hifiasm -o results/{wildcards.sample}/de_novo/hifiasm/{wildcards.sample}_hybridPN -t {threads} --ul {input.nano} {input.pac} 2> {log}
         """
 
-rule flyeChr:
+rule hifiasmULDenovoGfaToFasta:
     input:
-        "results/{sample}/chr{chr}/{sample}_{machine}_chr{chr}.fastq.gz",
+        prima = ancient("results/{sample}/de_novo/hifiasm/{sample}_hybridPN.bp.p_ctg.gfa"),
+        hap1 = ancient("results/{sample}/de_novo/hifiasm/{sample}_hybridPN.bp.hap1.p_ctg.gfa"),
+        hap2 = ancient("results/{sample}/de_novo/hifiasm/{sample}_hybridPN.bp.hap2.p_ctg.gfa"),
+        filtered = "results/{sample}/info/{sample}_hybridPN_5000_stat_filtered.txt",
     output:
-        "results/{sample}/assemblies_chrs/flye/chr{chr}/{machine}/assembly.fasta"
+        prima = "results/{sample}/intermediates/{sample}_hybridPN_denovo.fa",
+        hap1 = "results/{sample}/intermediates/{sample}_hybridPN_denovo_hap1.fa",
+        hap2 = "results/{sample}/intermediates/{sample}_hybridPN_denovo_hap2.fa",
+    benchmark:
+        "pipe_benchmarks/02_{sample}_hybridPN_hifiasm_denovo_gfa_to_fasta.bench"
+    shell:
+        """
+        awk '/^S/{{print ">"$2;print $3}}' {input.prima} | sed "s/ptg/{wildcards.sample}_hybridPN_hifiasmUL_denovo_/g" > {output.prima}
+        awk '/^S/{{print ">"$2;print $3}}' {input.hap1} | sed "s/h1tg/{wildcards.sample}_hybridPN_hifiasmUL_denovo_hap1_/g" > {output.hap1}
+        awk '/^S/{{print ">"$2;print $3}}' {input.hap2} | sed "s/h2tg/{wildcards.sample}_hybridPN_hifiasmUL_denovo_hap2_/g" > {output.hap2}
+        """
+
+rule hifiasmDeNovo:
+    input:
+        pac = "results/{sample}/{sample}_pacbio_5000.fastq.gz",
+    output:
+        prima = "results/{sample}/de_novo/hifiasm/{sample}_pacbio.bp.p_ctg.gfa",
+        hap1 = "results/{sample}/de_novo/hifiasm/{sample}_pacbio.bp.hap1.p_ctg.gfa",
+        hap2 = "results/{sample}/de_novo/hifiasm/{sample}_pacbio.bp.hap2.p_ctg.gfa",
     conda:
-        "envs/flye.yaml"
-    params:
-        "results/{sample}/assemblies_chrs/flye/chr{chr}/{machine}"
+        "../envs/hifiasm.yaml"
     log:
-        "logs/07_{sample}_{machine}_chr{chr}_flye.log"
-    threads: 40
+        "logs/01_{sample}_pacbio_hifiasm_denovo.log"
+    threads: 20
     benchmark:
-        "benchmarks/07_{sample}_{machine}_chr{chr}_flye.time"
+        "pipe_benchmarks/02_{sample}_pacbio_hifiasm_denovo_assembly.bench"
     shell:
         """
-        if [[ "{wildcards.machine}" == "pacbio" ]]; then
-             flye --pacbio-hifi {input} --out-dir {params} -t {threads} 2> {log}
-        elif [[ "{wildcards.machine}" == "nanopore" ]]; then
-             flye --nano-hq {input} --out-dir {params} -t {threads} 2> {log}
-        fi
+        hifiasm -o results/{wildcards.sample}/de_novo/hifiasm/{wildcards.sample}_hybridPN -t {threads} {input.pac} 2> {log}
         """
 
-rule flyeUlChr:
+rule hifiasmDenovoGfaToFasta:
     input:
-        nano = "results/{sample}/chr{chr}/{sample}_nanopore_chr{chr}.fastq.gz",
-        pac = "results/{sample}/chr{chr}/{sample}_pacbio_chr{chr}.fastq.gz",
+        prima = ancient("results/{sample}/de_novo/hifiasm/{sample}_pacbio.bp.p_ctg.gfa"),
+        hap1 = ancient("results/{sample}/de_novo/hifiasm/{sample}_pacbio.bp.hap1.p_ctg.gfa"),
+        hap2 = ancient("results/{sample}/de_novo/hifiasm/{sample}_pacbio.bp.hap2.p_ctg.gfa"),
+        filtered = "results/{sample}/info/{sample}_pacbio_stat_filtered.txt",
     output:
-        "results/{sample}/assemblies_chrs/flye/chr{chr}/pacnano/assembly.fasta"
-    conda:
-        "envs/flye.yaml"
-    params:
-        "results/{sample}/assemblies_chrs/flye/chr{chr}/pacnano"
-    log:
-        "logs/07_{sample}_pacnano_chr{chr}_flyeUL.log"
-    threads: 40
+        prima = "results/{sample}/intermediates/{sample}_pacbio_denovo.fa",
+        hap1 = "results/{sample}/intermediates/{sample}_pacbio_denovo_hap1.fa",
+        hap2 = "results/{sample}/intermediates/{sample}_pacbio_denovo_hap2.fa",
     benchmark:
-        "benchmarks/07_{sample}_pacnano_chr{chr}_flyeUL.time"
+        "pipe_benchmarks/02_{sample}_pacbio_hifiasm_denovo_gfa_to_fasta.bench"
     shell:
         """
-        #flye --nano-hq {input.pac} {input.nano} --iterations 0 --out-dir {output} --threads {threads} --scaffold --keep-haplotype
-        flye --nano-hq {input.pac} {input.nano} --iterations 0 --out-dir {params} --threads {threads} 2> {log}
-        flye --pacbio-hifi {input.pac} --resume-from polishing --out-dir {params} --threads {threads} 2>> {log}
-        """
-
-rule flyeChrRename:
-    input:
-        ancient("results/{sample}/assemblies_chrs/flye/chr{chr}/{machine}/assembly.fasta")
-    output:
-        "results/{sample}/assemblies_chrs/flye/{sample}_{machine}_chr{chr}_flye.fa"
-    shell:
-        """
-        sed 's/contig/{wildcards.sample}_{wildcards.machine}_chr{wildcards.chr}_flye/g' {input} > {output}
-        """
-
-rule flyeUlChrRename:
-    input:
-        ancient("results/{sample}/assemblies_chrs/flye/chr{chr}/pacnano/assembly.fasta")
-    output:
-        "results/{sample}/assemblies_chrs/flye/{sample}_pacnano_chr{chr}_flyeUL.fa"
-    shell:
-        """
-        sed 's/contig/{wildcards.sample}_pacnano_chr{wildcards.chr}_flyeUL/g' {input} > {output}
-        """
-
-rule flyeFullChrs:
-    input:
-        expand("results/{{sample}}/assemblies_chrs/flye/{{sample}}_{{machine}}_chr{chr}_flye.fa", chr = CHROMOSOMES)
-    output:
-        "results/{sample}/Assemblies/{sample}_{machine}_chrRef_flye.fa"
-    shell:
-        """
-        cat {input} > {output}
-        """
-
-rule flyeULFullChrs:
-    input:
-        expand("results/{{sample}}/assemblies_chrs/flye/{{sample}}_pacnano_chr{chr}_flyeUL.fa", chr = CHROMOSOMES)
-    output:
-        "results/{sample}/Assemblies/{sample}_pacnano_chrRef_flyeUL.fa"
-    shell:
-        """
-        cat {input} > {output}
-        """
-
-rule hifiasmFullChrs:
-    input:
-        expand("results/{{sample}}/assemblies_chrs/hifiasm/{{sample}}_{{machine}}_chr{chr}_hifiasm.fa", chr = CHROMOSOMES)
-    output:
-        "results/{sample}/Assemblies/{sample}_{machine}_chrRef_hifiasm.fa"
-    shell:
-        """
-        cat {input} > {output}
-        """
-
-rule hifiasmULFullChrs:
-    input:
-        expand("results/{{sample}}/assemblies_chrs/hifiasm/{{sample}}_pacnano_chr{chr}_hifiasm.fa", chr = CHROMOSOMES)
-    output:
-        "results/{sample}/Assemblies/{sample}_pacnano_chrRef_hifiasmUL.fa"
-    shell:
-        """
-        cat {input} > {output}
+        awk '/^S/{{print ">"$2;print $3}}' {input.prima} | sed "s/ptg/{wildcards.sample}_pacbio_hifiasm_denovo_/g" > {output.prima}
+        awk '/^S/{{print ">"$2;print $3}}' {input.hap1} | sed "s/h1tg/{wildcards.sample}_pacbio_hifiasm_denovo_hap1_/g" > {output.hap1}
+        awk '/^S/{{print ">"$2;print $3}}' {input.hap2} | sed "s/h2tg/{wildcards.sample}_pacbio_hifiasm_denovo_hap2_/g" > {output.hap2}
         """
 
 rule flyeDeNovo:
     input:
-        "results/{sample}/{sample}_{machine}_5000.fastq.gz",
+        "results/{sample}/{sample}_nanopore_5000.fastq.gz",
     output:
-        "results/{sample}/de_novo/flye/{sample}_{machine}_flye/assembly.fasta"
+        "results/{sample}/de_novo/flye/{sample}_nanopore_flye/assembly.fasta"
     conda:
-        "envs/flye.yaml"
+        "../envs/flye.yaml"
     log:
-        "logs/07_{sample}_{machine}_denovo_flye.log"
-    threads: 40
+        "logs/01_{sample}_nanopore_denovo_flye.log"
+    threads: 20
     params:
-        "results/{sample}/de_novo/flye/{sample}_{machine}_flye"
+        "results/{sample}/de_novo/flye/{sample}_nanopore_flye"
     benchmark:
-        "benchmarks/07_{sample}_{machine}_denovo_flye.time"
+        "pipe_benchmarks/02_{sample}_nanopore_denovo_flye_assembly.bench"
     shell:
         """
-        if [[ "{wildcards.machine}" == "pacbio" ]]; then
-             flye --pacbio-hifi {input} --out-dir {params} -t {threads} 2> {log}
-        elif [[ "{wildcards.machine}" == "nanopore" ]]; then
-             flye --nano-hq {input} --out-dir {params} -t {threads} 2> {log}
-        fi
+        flye --nano-hq {input} --out-dir {params} -t {threads} 2> {log}
         """
 
-rule flyeULDeNovo:
+rule flyeFasta:
     input:
+        filtered = "results/{sample}/info/{sample}_nanopore_stat_filtered.txt",
+        fa = "results/{sample}/de_novo/flye/{sample}_nanopore_flye/assembly.fasta"
+    output:
+        "results/{sample}/intermediates/{sample}_nanopore_denovo.fa",
+    benchmark:
+        "pipe_benchmarks/02_{sample}_nanopore_denovo_flye_fasta.bench"
+    shell:
+        """
+        sed 's/contig/{wildcards.sample}_nanopore_flye_denovo/g' {input.fa} > {output}
+        """
+
+rule contigsQuast:
+    input:
+        "results/{sample}/intermediates/{sample}_{method}_denovo.fa",
+    output:
+        "results/{sample}/info/{sample}_{method}_denovo_quast/report.tsv"
+    conda:
+        "../envs/quast.yaml"
+    benchmark:
+        "pipe_benchmarks/03_{sample}_{method}_quast.bench"
+    params:
+        "results/{sample}/info/{sample}_{method}_denovo_quast/"
+    shell:
+        """
+        quast.py {input} -o {params}
+        """
+
+rule ntlink_fasta:
+    input:
+        quast = "results/{sample}/info/{sample}_{method}_denovo_quast/report.tsv",
+        fa = "results/{sample}/intermediates/{sample}_{method}_denovo.fa",
+    output:
+        temp("results/{sample}/intermediates/ntlink/{sample}_{method}_denovo.fa")
+    shell:
+        """
+        cp {input.fa} {output}
+        """
+
+rule ntLinkPacnano:
+    input:
+        fa = "results/{sample}/intermediates/ntlink/{sample}_hybridPN_denovo.fa",
         nano = "results/{sample}/{sample}_nanopore_5000.fastq.gz",
         pac = "results/{sample}/{sample}_pacbio_5000.fastq.gz",
     output:
-        "results/{sample}/de_novo/flye/{sample}_pacnano_flyeUL/assembly.fasta"
+        fa = "results/{sample}/intermediates/ntlink/{sample}_hybridPN_denovo.fa.k{kval}.w{wval}.z1000.ntLink.scaffolds.gap_fill.fa",
     conda:
-        "envs/flye.yaml"
-    params:
-        "results/{sample}/de_novo/flye/{sample}_pacnano_flyeUL"
-    log:
-        "logs/07_{sample}_pacnano_flyeUL_denovo.log"
-    threads: 40
+        "../envs/ntlink.yaml"
+    threads: 10
     benchmark:
-        "benchmarks/07_{sample}_pacnano_flyeUL_denovo.time"
+        "pipe_benchmarks/04_{sample}_hybridPN_denovo_ntlink_k{kval}_w{wval}.bench"
+    log:
+        "logs/02_{sample}_hybridPN_denovo_ntlink_k{kval}.w{wval}.log"
     shell:
         """
-        flye --nano-hq {input.pac} {input.nano} --iterations 0 --out-dir {params} --threads {threads} 2> {log}
-        flye --pacbio-hifi {input.pac} --resume-from polishing --out-dir {params} --threads {threads} 2>> {log}
-        """
+        ntLink scaffold gap_fill target={input.fa} reads="{input.nano} {input.pac}" t={threads} sensitive=True overlap=True extra_clean k={wildcards.kval} w={wildcards.wval} a=2 2> {log}
 
-
-
-
-rule evaluatePacbioChrAssembly:
-    input:
-        "results/{sample}/Assemblies/{sample}_pacnano_chrRef_flye.fa"
-    output:
-        busco = "results/{sample}/busco_{assembly}/short_summary.specific.primates_odb10.busco_{sample}.txt"
-    conda:
-        "envs/busco.yaml"
-    params:
-        "results/{sample}/busco_{assembly}/"
-    log:
-        "logs/08_{sample}_busco_{assembly}.log"
-    threads: 20
-    benchmark:
-        "benchmarks/08_{sample}_busco_{assembly}.time"
-    shell:
-        """
-        busco -m genome -i {input} -o {params} -l primates_odb10 -c {threads} -f 2> {log}
-        """
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-rule canuChr:
-    input:
-        "results/{sample}/chr{chr}/{sample}_{machine}_chr{chr}.fastq.gz",
-    output:
-        directory("results/{sample}/assemblies_chrs/canu/chr{chr}/{machine}")
-    conda:
-        "envs/canu.yaml"
-    log:
-        "logs/07_{sample}_{machine}_chr{chr}_canu.log"
-    threads: 20
-    benchmark:
-        "benchmarks/07_{sample}_{machine}_chr{chr}_canu.time"
-    shell:
-        """
-        if [[ "{wildcards.machine}" == "pacbio" ]]; then
-             canu -p {wildcards.sample}_{wildcards.machine}_chr{chr}_canu -d {output} -pacbio-hifi {input} 2> {log}
-        elif [[ "{wildcards.machine}" == "nanopore" ]]; then
-             canu -p {wildcards.sample}_{wildcards.machine}_chr{chr}_canu -d {output} -nanopore {input} 2> {log}
+        filled=$(find "results/{wildcards.sample}/intermediates/ntlink/" -name "*gap_fill.fa" | wc -l)
+        if [[ $filled -eq 9 ]]; then
+            find "results/{wildcards.sample}/intermediates/ntlink/" \( -name "{wildcards.sample}*tsv" -o -name "{wildcards.sample}*trim*" -o -name "{wildcards.sample}*aby*" \) -exec rm {{}} + 
         fi
         """
 
-rule canuUlChr:
+rule ntLinkPabio:
     input:
-        nano = "results/{sample}/chr{chr}/{sample}_nanopore_chr{chr}.fastq.gz",
-        pac = "results/{sample}/chr{chr}/{sample}_pacbio_chr{chr}.fastq.gz",
+        fa = "results/{sample}/intermediates/ntlink/{sample}_pacbio_denovo.fa",
+        pac = "results/{sample}/{sample}_pacbio_5000.fastq.gz",
     output:
-        directory("results/{sample}/assemblies_chrs/canuUL/chr{chr}")
+        fa = "results/{sample}/intermediates/ntlink/{sample}_pacbio_denovo.fa.k{kval}.w{wval}.z1000.ntLink.scaffolds.gap_fill.fa",
     conda:
-        "envs/flye.yaml"
-    log:
-        "logs/07_{sample}_pacnano_chr{chr}_canuUL.log"
-    threads: 20
+        "../envs/ntlink.yaml"
+    threads: 10
     benchmark:
-        "benchmarks/07_{sample}_pacnano_chr{chr}_canuUL.time"
+        "pipe_benchmarks/04_{sample}_pacbio_denovo_ntlink_k{kval}_w{wval}.bench"
+    log:
+        "logs/02_{sample}_pacbio_denovo_ntlink_k{kval}.w{wval}.log"
     shell:
         """
-        canu -p {wildcards.sample}_{wildcards.machine}_chr{chr}_canuUl -d {output} -nanopore {input.nano} -pacbio-hifi {input.pac} 2> {log}
+        ntLink scaffold gap_fill target={input.fa} reads="{input.pac}" t={threads} sensitive=True overlap=True extra_clean k={wildcards.kval} w={wildcards.wval} a=2 2> {log}
+
+        filled=$(find "results/{wildcards.sample}/intermediates/ntlink/" -name "*gap_fill.fa" | wc -l)
+        if [[ $filled -eq 9 ]]; then
+            find "results/{wildcards.sample}/intermediates/ntlink/" \( -name "{wildcards.sample}*tsv" -o -name "{wildcards.sample}*trim*" -o -name "{wildcards.sample}*aby*" \) -exec rm {{}} + 
+        fi
         """
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-rule evaluatePacbioChrAssembly2:
+rule ntLinkNanopore:
     input:
-        "results/{sample}/{sample}_{assembly}_contigs.fasta"
+        fa = "results/{sample}/intermediates/ntlink/{sample}_nanopore_denovo.fa",
+        nano = "results/{sample}/{sample}_nanopore_5000.fastq.gz",
     output:
-        busco = "results/{sample}/busco_{assembly}/short_summary.specific.primates_odb10.busco_{assembly}.txt"
+        fa = "results/{sample}/intermediates/ntlink/{sample}_nanopore_denovo.fa.k{kval}.w{wval}.z1000.ntLink.scaffolds.gap_fill.fa",
     conda:
-        "envs/busco.yaml"
-    params:
-        "results/{sample}/busco_{assembly}/"
-    log:
-        "logs/08_{sample}_busco_{assembly}.log"
-    threads: 20
+        "../envs/ntlink.yaml"
+    threads: 10
     benchmark:
-        "benchmarks/08_{sample}_busco_{assembly}.time"
+        "pipe_benchmarks/04_{sample}_nanopore_denovo_ntlink_k{kval}_w{wval}.bench"
+    log:
+        "logs/02_{sample}_nanopore_denovo_ntlink_k{kval}.w{wval}.log"
+    shell:
+        """
+        ntLink scaffold gap_fill target={input.fa} reads="{input.nano}" t={threads} sensitive=True overlap=True extra_clean k={wildcards.kval} w={wildcards.wval} a=2 2> {log}
+
+        filled=$(find "results/{wildcards.sample}/intermediates/ntlink/" -name "*gap_fill.fa" | wc -l)
+        if [[ $filled -eq 9 ]]; then
+            find "results/{wildcards.sample}/intermediates/ntlink/" \( -name "{wildcards.sample}*tsv" -o -name "{wildcards.sample}*trim*" -o -name "{wildcards.sample}*aby*" \) -exec rm {{}} + 
+        fi
+        """
+
+rule ntlink_least_contigs:
+    input:
+        expand("results/{{sample}}/intermediates/ntlink/{{sample}}_{{method}}_denovo.fa.k{kval}.w{wval}.z1000.ntLink.scaffolds.gap_fill.fa", kval = KVALS, wval = WVALS),
+    output:
+        "results/{sample}/intermediates/{sample}_{method}_ntlink_least_contigs.txt"
+    shell:
+        """
+        grep -c ">" {input} | sort -t ':' -k2 > {output}
+        """
+
+checkpoint extract_least_contigs:
+    input:
+        "results/{sample}/intermediates/{sample}_{method}_ntlink_least_contigs.txt"
+    output:
+        directory("results/{sample}/intermediates/{sample}_{method}_ntLink2")
+    shell:
+        """
+        least_contigs=$(head -1 {input} | cut -d":" -f1)
+
+        mkdir -p {output}
+        cp $least_contigs {output}
+        """
+
+def ntlink_output(wildcards):
+    checkpoint_output = checkpoints.extract_least_contigs.get(**wildcards).output[0]
+    return expand("results/{sample}/intermediates/{sample}_{method}_ntLink2/{i}.fa",
+               sample=wildcards.sample,
+               method=wildcards.method,
+               i=glob_wildcards(os.path.join(checkpoint_output, "{i}.fa")).i)
+
+rule ntlink_final:
+    input:
+        ntlink_output
+    output:
+        "results/{sample}/linked/{sample}_{method}_denovo_ntlink.fasta"
+    shell:
+        """
+        cat {input} > {output}
+        """
+
+rule ragTag:
+    input:
+        ref = "genomes/{ref}/{ref}.fna",
+        fa = "results/{sample}/linked/{sample}_{method}_denovo_ntlink.fasta"
+    output:
+        "results/{sample}/ragtag/{ref}/{sample}_{method}_denovo_ntlink_ragtag_{ref}.fa"
+    params:
+        "results/{sample}/ragtag/{ref}/"
+    threads: 10
+    benchmark:
+        "pipe_benchmarks/05_{sample}_{method}_{ref}_ragtag.bench"
+    conda:
+        "../envs/ragtag.yaml"
+    shell:
+        """
+        if [[ {wildcards.ref} != "none" ]]; then
+            ragtag.py scaffold -t {threads} -o {params} -u {input.ref} {input.fa}
+            sed 's/_RagTag//g' {params}"ragtag.scaffold.fasta" > {output}
+        else
+            cp {input.fa} {output}
+        fi
+        """
+
+rule ragTagHybrid:
+    input:
+        ref = "genomes/{ref}/{ref}.fna",
+        fa = "results/{sample}/intermediates/{sample}_hybridPN_denovo_{hap}.fa",
+    output:
+        "results/{sample}/ragtag/{ref}/{hap}/{sample}_hybridPN_denovo_{hap}.fa"
+    params:
+        "results/{sample}/ragtag/{ref}/{hap}/"
+    threads: 10
+    conda:
+        "../envs/ragtag.yaml"
+    benchmark:
+        "pipe_benchmarks/05_{sample}_hybridPN_{hap}_{ref}_ragtag.bench"
+    shell:
+        """
+        if [[ {wildcards.ref} != "none" ]]; then
+            ragtag.py scaffold -t {threads} -o {params} -u {input.ref} {input.fa}
+            sed 's/_RagTag//g' {params}"ragtag.scaffold.fasta" > {output}
+        else
+            cp {input.fa} {output}
+        fi
+        """
+
+rule acc_chr:
+    input:
+        "genomes/{ref}/{ref}.info"
+    output:
+        "results/{sample}/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt"
+    benchmark:
+        "pipe_benchmarks/06_{sample}_{ref}_acc_chr.bench"
+    shell:
+        """
+        python scripts/json_parse.py {input} | sed '/accession/d;/MT/d' | awk '{{print $1,"{wildcards.sample}_chr"$2}}' > {output}
+        """
+
+rule rename_scaffolds:
+    input:
+        acc = "results/{sample}/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt",
+        fa = "results/{sample}/ragtag/{ref}/{sample}_{method}_denovo_ntlink_ragtag_{ref}.fa"
+    output:
+        fa = "results/{sample}/contigs/{sample}_{method}_denovo_ntlink_{ref}.fa",
+        acc = temp("{sample}_{method}_{ref}.temp")
+    benchmark:
+        "pipe_benchmarks/06_{sample}_{method}_{ref}_rename_scaffolds.bench"
+    shell:
+        """
+        awk '{{print $1}}' {input.acc} > {output.acc} 
+        bash scripts/rename_awk.sh {output.acc} {wildcards.sample} {input.fa} {output.fa}
+        while read -r acc chrs; do
+            sed "s/${{acc}}/${{chrs}}/g" -i {output.fa}
+        done < {input.acc}
+        """
+
+rule rename_hapScaffolds:
+    input:
+        acc = "results/{sample}/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt",
+        fa = "results/{sample}/ragtag/{ref}/{hap}/{sample}_hybridPN_denovo_{hap}.fa"
+    output:
+        fa = "results/{sample}/contigs/{sample}_hybridPN_denovo_{hap}_{ref}.fa",
+        acc = temp("{sample}_hybridPN_{ref}_{hap}.temp")
+    benchmark:
+        "pipe_benchmarks/06_{sample}_hibridPN_{ref}_{hap}_rename_scaffolds.bench"
+    shell:
+        """
+        awk '{{print $1}}' {input.acc} | sed '1d' > {output.acc} 
+        bash scripts/rename_awk.sh {output.acc} {wildcards.sample} {input.fa} {output.fa}
+        while read -r acc chrs; do
+            sed "s/${{acc}}/{wildcards.sample}_{wildcards.hap}_chr${{chrs}}/g" -i {output.fa}
+            sed "s/contig/{wildcards.hap}_contig/g" -i {output.fa}
+        done < {input.acc}
+        """
+
+rule contigsFinalQuast:
+    input:
+        "results/{sample}/contigs/{sample}_{method}_denovo_ntlink_{ref}.fa",
+    output:
+        "results/{sample}/info/{sample}_{method}_denovo_ntlink_{ref}_quast/report.tsv"
+    conda:
+        "../envs/quast.yaml"
+    benchmark:
+        "pipe_benchmarks/06_{sample}_{method}_{ref}_quast_final.bench"
+    params:
+        "results/{sample}/info/{sample}_{method}_denovo_ntlink_{ref}_quast/"
+    shell:
+        """
+        quast.py {input} -o {params}
+        """
+
+rule buscoFinal:
+    input:
+        "results/{sample}/contigs/{sample}_{method}_denovo_ntlink_{ref}.fa"
+    output:
+        "results/{sample}/info/{sample}_{method}_denovo_ntlink_{ref}_busco/run_primates_odb10/short_summary.txt"
+    conda:
+        "../envs/busco.yaml"
+    log:
+        "logs/03_{sample}_{method}_denovo_ntlink_ragtag_{ref}_busco.log"
+    benchmark:
+        "pipe_benchmarks/06_{sample}_{method}_{ref}_busco.bench"
+    params:
+        "results/{sample}/info/{sample}_{method}_denovo_ntlink_{ref}_busco/"
+    threads: 20
     shell:
         """
         busco -m genome -i {input} -o {params} -l primates_odb10 -c {threads} -f 2> {log}
         """
 
-'''
-def final_out():
-    if 'pacbio' in MACHINES and 'nanopore' in MACHINES:
-        return(expand("results/{sample}/busco_pacnano/short_summary.specific.primates_odb10.busco_pacnano.txt", sample = SAMPLES))
-    elif 'pacbio' in MACHINES:
-        return(expand("results/{sample}/busco_pacbio/short_summary.specific.primates_odb10.busco_pacbio.txt", sample = SAMPLES))
-    elif 'nanopore' in MACHINES:
-        return(expand("results/{sample}/busco_pacbio/short_summary.specific.primates_odb10.busco_nanopore.txt", sample = SAMPLES))
-
-rule all:
+rule liftOff:
     input:
-        final_out()
+        genome = "genomes/{ref}/{ref}.fna",
+        gff = "genomes/{ref}/{ref}.gff",
+        fa = "results/{sample}/contigs/{sample}_{method}_denovo_ntlink_{ref}.fa",
+        chrInfo = "results/{sample}/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt"
+    output:
+        temp = temp("results/{sample}/ragtag/{ref}/{sample}_{method}_denovo_ntlink_{ref}.gff"),
+        unmap = "results/{sample}/ragtag/{ref}/{sample}_{method}_denovo_ntlink_{ref}_liftoff_unmapped.txt",
+        dir = temp(directory("results/{sample}/ragtag/{ref}/liftoff_{method}")),
+    benchmark:
+        "pipe_benchmarks/06_{sample}_{method}_{ref}_liftoff.bench"
+    conda:
+        "../envs/liftoff.yaml"
+    threads: 15
+    shell:
+        """
+        if [[ {wildcards.ref} != "none" ]]; then
+            yChr=$(grep -c "chrY" {input.fa} || true)
+            if [[ $yChr -eq 0 ]]; then
+                sed '/chrY/d' {input.chrInfo} -i
+            fi
+            liftoff -g {input.gff} -o {output.temp} -p {threads} -u {output.unmap} -dir {output.dir} -chroms {input.chrInfo} {input.fa} {input.genome}
+        else
+            touch {output.temp} {output.unmap}
+            mkdir -p {output.dir}
+        fi
+        """
 
-# do oncomplete remove temp files
+rule gff_correct:
+    input:
+        "results/{sample}/ragtag/{ref}/{sample}_{method}_denovo_ntlink_{ref}.gff",
+    output:
+        gff = "results/{sample}/contigs/{sample}_{method}_denovo_ntlink_{ref}.gff",
+    benchmark:
+        "pipe_benchmarks/06_{sample}_{method}_{ref}_liftoff_correct.bench"
+    conda:
+        "../envs/genometools.yaml"
+    shell:
+        """
+        gt gff3 -sort -tidy -retainids {input} > {output}
+        """
 
-## Flye settings
-# scaffold = fill gaps with 100Ns
-# --keep-haplotype breaks up contigs. Recover later stage
-'''
+rule assembly_coverage_pacbio:
+    input:
+        pac = "results/{sample}/{sample}_pacbio_5000.fastq.gz",
+        fa = "results/{sample}/ragtag/{ref}/{sample}_pacbio_denovo_ntlink_ragtag_{ref}.fa"
+    output:
+        sam = temp("results/{sample}/ragtag/{ref}/{sample}_pacbio_denovo_ntlink_ragtag_{ref}_pac.sam"),
+    conda:
+        "../envs/minimap2.yaml"
+    benchmark:
+        "pipe_benchmarks/07_{sample}_pacbio_{ref}_assembly_coverage.bench"
+    threads: 20
+    shell:
+        """
+        minimap2 -ax map-hifi -t {threads} {input.fa} {input.pac} > {output}
+        """
+
+rule assembly_coverage_hybrid_pac:
+    input:
+        hap = expand("results/{{sample}}/contigs/{{sample}}_hybridPN_denovo_{hap}_{{ref}}.fa", hap = ["hap1","hap2"]),
+        pac = "results/{sample}/{sample}_pacbio_5000.fastq.gz",
+        fa = "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}.fa"
+    output:
+        sam = temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_pac.sam"),
+    conda:
+        "../envs/minimap2.yaml"
+    benchmark:
+        "pipe_benchmarks/07_{sample}_hybridPN_{ref}_assembly_coverage.bench"
+    threads: 20
+    shell:
+        """
+        minimap2 -ax map-hifi -t {threads} {input.fa} {input.pac} > {output}
+        """
+
+rule assembly_coverage_hybrid_nano:
+    input:
+        hap = expand("results/{{sample}}/contigs/{{sample}}_hybridPN_denovo_{hap}_{{ref}}.fa", hap = ["hap1","hap2"]),
+        nano = "results/{sample}/{sample}_nanopore_5000.fastq.gz",
+        fa = "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}.fa"
+    output:
+        sam = temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_nano.sam"),
+    conda:
+        "../envs/minimap2.yaml"
+    benchmark:
+        "pipe_benchmarks/07_{sample}_nanopore_{ref}_assembly_coverage.bench"
+    threads: 20
+    shell:
+        """
+        minimap2 -ax map-ont -t {threads} {input.fa} {input.nano} > {output}
+        """
+
+rule hybrid_mapping_sam_bam:
+    input:
+        "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_{pacORnano}.sam",
+    output:
+        temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_{pacORnano}.bam"),
+    conda:
+        "../envs/minimap2.yaml"
+    benchmark:
+        "pipe_benchmarks/07_{sample}_hybridPN_{ref}_assembly_remap_{pacORnano}.bench"
+    threads: 10
+    shell:
+        """
+        samtools view -@ {threads} -bh {input} > {output}
+        """
+
+rule hybrid_mapping_sort:
+    input:
+        pac = "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_{pacORnano}.bam",
+    output:
+        sort = temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_{pacORnano}_sort.bam"),
+        bai = temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_{pacORnano}_sort.bam.bai"),
+        cov = "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_{pacORnano}_sort.coverage",
+    conda:
+        "../envs/minimap2.yaml"
+    benchmark:
+        "pipe_benchmarks/07_{sample}_hybridPN_{ref}_assembly_remap_{pacORnano}_sort.bench"
+    threads: 10
+    shell:
+        """
+        samtools sort -@ {threads} -o {output.sort} {input}
+        samtools index {output.sort}
+        samtools depth {output.sort} |  awk -v var={wildcards.pacORnano} '{{sum+=$3}} END {{ print "Average_"var" = "sum/NR }}' > {output.cov}
+        """
+
+rule hybrid_merge_pac_nano:
+    input:
+        bam = expand("results/{{sample}}/ragtag/{{ref}}/{{sample}}_hybridPN_denovo_ntlink_ragtag_{{ref}}_{pacORnano}_sort.bam", pacORnano = ["pac", "nano"]),
+    output:
+        temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}.bam"),
+    conda:
+        "../envs/minimap2.yaml"
+    benchmark:
+        "pipe_benchmarks/07_{sample}_hybridPN_{ref}_assembly_remap_merge.bench"
+    threads: 10
+    shell:
+        """
+        samtools merge -@ {threads} -o {output} {input.bam}
+        """
+
+rule hybrid_mapping_coverage:
+    input:
+        expand("results/{{sample}}/ragtag/{{ref}}/{{sample}}_hybridPN_denovo_ntlink_ragtag_{{ref}}_{pacORnano}_sort.bam", pacORnano = ["pac", "nano"])
+    output:
+        "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}.coverage",
+    benchmark:
+        "pipe_benchmarks/07_{sample}_hybridPN_{ref}_assembly_remap_coverage.bench"
+    shell:
+        """
+        cat {input} | awk 'SUM+=$3;END{{print "Average_hybrid =", SUM}}' > {output}
+        """
+
+rule final_quast_busco:
+    input:
+        gff = "results/{sample}/contigs/{sample}_{method}_denovo_ntlink_{ref}.gff",
+        quast = "results/{sample}/info/{sample}_{method}_denovo_quast/report.tsv",
+        busco = "results/{sample}/info/{sample}_{method}_denovo_ntlink_{ref}_busco/run_primates_odb10/short_summary.txt",
+        finalQuast = "results/{sample}/info/{sample}_{method}_denovo_ntlink_{ref}_quast/report.tsv"
+    output:
+        stats = "results/{sample}/info/{sample}_{method}_denovo_ntlink_ragtag_{ref}_stats.csv"
+    benchmark:
+        "pipe_benchmarks/08_{sample}_{method}_{ref}_stats_collect.bench"
+    shell:
+        """
+        busco_db=$(grep "Total BUSCO" {input.busco} | awk '{{print $1}}')
+        grep "Assembly" {input.quast} | awk '{{print $2}}' > {output}
+        grep "Complete BUSCO"  {input.busco} | awk -v var="$busco_db" '{{print $1/var*100}}' >> {output} 
+        grep "contigs (>= 0 bp)" {input.quast} | awk -F"\t" '{{print $2}}' >> {output}
+        grep "N50" {input.quast} | awk '{{print $2}}' >> {output}
+        grep "contigs (>= 0 bp)" {input.finalQuast} | awk -F"\t" '{{print $2}}' >> {output}
+        grep "N50" {input.finalQuast} | awk '{{print $2}}' >> {output}
+        """
+
