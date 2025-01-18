@@ -37,10 +37,10 @@ Installation
     cd LRS-Assembler
 
     Install environment:
-    ```
+    
     conda env create -f envs/LRS-assembler.yaml
     conda activate lrs_pipe
-    ```
+    
     Customize the configs/run-config.yaml file with your reference genome information and other settings.
 
 Input Data Structure
@@ -85,7 +85,9 @@ Execution
 
 Run the workflow with Snakemake:
 
-```snakemake --cores <number_of_cores> -s scripts/Snakefile```
+```
+snakemake --cores <number_of_cores> -s scripts/Snakefile
+```
 
 
 Output
@@ -101,3 +103,8 @@ Contributions are welcome! Feel free to submit a pull request or open an issue.
 License
 
 This project is licensed under the MIT License
+
+To be add:
+  * Example
+  * Annotation
+  * Remove Flye
