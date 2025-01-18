@@ -1,0 +1,9 @@
+name: lrs_pipe
+channels:
+  - bioconda
+  - conda-forge
+  - default
+dependencies:
+  - snakemake
+  - pandas
+  - glob
