@@ -4,4 +4,4 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - busco=5.7.0
+  - busco=5.8.2
