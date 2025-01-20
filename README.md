@@ -86,7 +86,7 @@ Execution
 Run the workflow with Snakemake:
 
 ```
-snakemake --cores <number_of_cores> -s scripts/Snakefile
+snakemake --cores <number_of_cores> -s scripts/Snakefile --use-conda
 ```
 
 
