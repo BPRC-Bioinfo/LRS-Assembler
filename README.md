@@ -9,7 +9,12 @@ In addition to genome assembly, the workflow supports the phasing and annotation
 To download the pipeline, the repository can be cloned using the following command:
 
     git clone git@github.com:BPRC-Bioinfo/LRS-Assembler.git
-    cd LRS-Assembler
+    cd ./LRS-Assembler
+
+Then install the pipeline dependencies in a new enviroment:
+
+    conda env create -f envs/LRS-assembler.yaml
+    conda activate lrs_pipe
 
 ## Features
 
