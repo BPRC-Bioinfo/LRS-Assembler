@@ -4,6 +4,13 @@ This Snakemake workflow facilitates the hybrid assembly of long-read datasets ge
 
 In addition to genome assembly, the workflow supports the phasing and annotation of user-specified regions, such as highly heterozygous immune-related haplotypes. By utilizing the high contiguity of paternal and maternal contigs produced by hifiasm, and integrating a user-provided reference sequence database, it enables accurate annotation of these regions. 
 
+## Installation Guide
+
+To download the pipeline, the repository can be cloned using the following command:
+
+    git clone git@github.com:BPRC-Bioinfo/LRS-Assembler.git
+    cd LRS-Assembler
+
 ## Features
 
   * Support for ONT and PacBio: Assemble genomes using both sequencing platforms for a hybrid assembly.
