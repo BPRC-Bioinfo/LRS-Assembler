@@ -76,6 +76,7 @@ rule refPrepare:
         json = "genomes/ncbi_dataset/data/assembly_data_report.jsonl",
         json2 = "genomes/ncbi_dataset/data/dataset_catalog.json",
         dir = directory("genomes/ncbi_dataset/data/{ref}"),
+    retries: 3
     benchmark:
         "pipe_benchmarks/00_{ref}_download.bench"
     shell:
