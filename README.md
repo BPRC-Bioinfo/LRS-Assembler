@@ -39,6 +39,23 @@ raws/
 ```
 
 The ONT reads do not need to be combined into a single file prior to starting the pipeline.
+The pipeline can process data from multiple samples in parallel, which will help speed up the overall processing time.
+
+### Updating User-specific Variables
+
+Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species.
+
+A config file looks like:
+```
+species: "macaca mulatta"
+region:
+  KIR:
+    left_flank: "FCAR"
+    right_flank: "LILRA6"
+    library: "references/mamu_kir_gen_2501.fasta" 
+    minimap2: "-cx splice:hq -G16k"
+    blast: "-word_size 7"
+```
 
 ## Features
 
