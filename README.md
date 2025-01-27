@@ -43,7 +43,7 @@ The pipeline can process data from multiple samples in parallel, which will help
 
 ### Updating User-specific Variables
 
-Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species.
+Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. For annotation of the specified regions, a reference database has to be provided in the config file. Whether the reference database contains genomic or transcriptomic sequences, and the minimap2 command should be changed accordingly. The splice:hq option is to map transcriptome data to genomic sequences, while ```-ax asm5``` or asm10 could be used for genomic reference databases. 
 
 A config file looks like:
 ```
