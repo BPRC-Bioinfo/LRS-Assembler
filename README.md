@@ -16,6 +16,14 @@ Then install the pipeline dependencies in a new enviroment:
     conda env create -f envs/LRS-assembler.yaml
     conda activate lrs_pipe
 
+## Usage Guide
+
+Before running LRS-Assembler, the user has to provide the input data files in the specified structure and define the analysis variables in the configuration file. This file should specify the scientific name of the species studied and, optionally, include details on the flanking genes of the regions of interest and the location of the reference library. If necessary, the user can also adjust the mapping settings.
+
+### Input Data
+
+
+
 ## Features
 
   * Support for ONT and PacBio: Assemble genomes using both sequencing platforms for a hybrid assembly.
