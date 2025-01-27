@@ -22,7 +22,23 @@ Before running LRS-Assembler, the user has to provide the input data files in th
 
 ### Input Data
 
+The input data should be organized in the following manner:
 
+```
+raws/
+├── sample1/
+│   ├── nanopore/
+│   │   └── reads.fastq.gz
+│   └── pacbio/
+│       └── reads.bam
+├── sample2/
+│   ├── nanopore/
+│   │   └── reads.fastq.gz
+│   └── pacbio/
+│       └── reads.bam
+```
+
+The ONT reads do not need to be combined into a single file prior to starting the pipeline.
 
 ## Features
 
