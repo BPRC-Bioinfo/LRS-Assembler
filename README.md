@@ -61,11 +61,13 @@ region:
 
 ### Run The Pipeline
 
-To execute the pipeline, after the input data has been placed in the specified directory and the variables in the config file are defined, use:
+To execute the pipeline, ensure that the input data is placed in the specified directory and the variables in the configuration file are properly defined. Then, run the following command:
 
 ```
 snakemake --cores <number_of_cores> -s scripts/Snakefile --use-conda
 ```
+
+## Output
 
 ## Features
 
