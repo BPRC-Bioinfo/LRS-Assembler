@@ -43,7 +43,9 @@ The pipeline can process data from multiple samples in parallel, which will help
 
 ### Updating User-specific Variables
 
-Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. For annotation of the specified regions, a reference database has to be provided in the config file. Whether the reference database contains genomic or transcriptomic sequences, and the minimap2 command should be changed accordingly. The splice:hq option is to map transcriptome data to genomic sequences, while ```-ax asm5``` or asm10 could be used for genomic reference databases. 
+Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
+
+To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
 
 A config file looks like:
 ```
@@ -55,6 +57,14 @@ region:
     library: "references/mamu_kir_gen_2501.fasta" 
     minimap2: "-cx splice:hq -G16k"
     blast: "-word_size 7"
+```
+
+### Run The Pipeline
+
+To execute the pipeline, after the input data has been placed in the specified directory and the variables in the config file are defined, use:
+
+```
+snakemake --cores <number_of_cores> -s scripts/Snakefile --use-conda
 ```
 
 ## Features
