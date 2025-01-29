@@ -62,7 +62,9 @@ pacbio:
 Users should specify the scientific name of the species being studied. 
 
 **Reference**
-A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the location of a local genome assembly and its annotation file (gff). 
+A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the path to a local genome assembly and its annotation file (gff). 
+
+Additionally, a chromosome information file must be provided to run LiftOff annotations. An example of this file is available in the repository.
 
 **Region (Optional)**
 Users can define one or more regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
