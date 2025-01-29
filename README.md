@@ -58,23 +58,23 @@ pacbio:
   Sample_2:
     - "/path/to/local/Sample_2/pacbio/bam1"
 ```
-**Species**
+**Species**<br/>
 Users should specify the scientific name of the species being studied. 
 
-**Reference**
+**Reference**<br/>
 A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the path to a local genome assembly and its annotation file (gff). 
 
 Additionally, a chromosome information file must be provided to run LiftOff annotations. An example of this file is available in the repository.
 
-**Region (Optional)**
+**Region (Optional)**<br/>
 Users can define one or more regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
 
 To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
 
-**BUSCO**
+**BUSCO**<br/>
 To evaluate the completeness of the genome assembly, a BUSCO analysis is performed. This method relies on evolutionarily informed expectations of near-universal single-copy orthologs to assess genome completeness. Various lineage-specific datasets can be used for this assessment, which are available at: https://busco.ezlab.org/list_of_lineages.html.
 
-**Nanopore** and **PacBio**
+**Nanopore** and **PacBio**<br/>
 The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. The ONT and PacBio reads do not need to be combined into a single file prior to starting the pipeline.
 
 ### Run The Pipeline
