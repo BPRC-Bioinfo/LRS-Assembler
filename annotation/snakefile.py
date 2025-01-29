@@ -2,7 +2,7 @@ import pandas as pd
 from glob import glob
 import itertools
 
-configfile:"configs/macaque2.yaml"
+configfile:"configs/macaque.yaml"
 REGIONS = config['region']
 SPECIES=config['species'].replace(" ", "_")
 
@@ -268,7 +268,7 @@ rule region_intact_cigar_info:
         "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt"
     shell:
         """
-        python paf_cigar2.py {input} {output}
+        python paf_cigar.py {input} {output}
         """
 
 rule region_intact_gene_blast:
