@@ -24,28 +24,6 @@ Before running LRS-Assembler, the user has to provide the location of the input 
 
 The configuration file, located at ```configs/run-config.yaml```, must be updated with user-specific variables before launching LRS-Assembler. Various settings can be modified, as outlined below.
 
-**Species**
-
-Users should specify the scientific name of the species being studied. 
-
-**Reference**
-
-A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the location of a local genome assembly and its annotation file (gff). 
-
-**Region (Optional)**
-
-Users can define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
-
-To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
-
-**BUSCO**
-
-To evaluate the completeness of the genome assembly, a BUSCO analysis is performed. This method relies on evolutionarily informed expectations of near-universal single-copy orthologs to assess genome completeness. Various lineage-specific datasets can be used for this assessment, which are available at: https://busco.ezlab.org/list_of_lineages.html.
-
-**Nanopore** and **PacBio**
-
-The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. 
-
 A config file looks like:
 ```
 species: "Macaca mulatta"
@@ -80,45 +58,22 @@ pacbio:
   Sample_2:
     - "/path/to/local/Sample_2/pacbio/bam1"
 ```
+**Species**
+Users should specify the scientific name of the species being studied. 
 
-### Input Data
+**Reference**
+A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the location of a local genome assembly and its annotation file (gff). 
 
-The input data should be organized in the following manner:
-
-```
-raws/
-├── sample1/
-│   ├── nanopore/
-│   │   └── reads.fastq.gz
-│   └── pacbio/
-│       └── reads.bam
-├── sample2/
-│   ├── nanopore/
-│   │   └── reads.fastq.gz
-│   └── pacbio/
-│       └── reads.bam
-```
-
-The ONT reads do not need to be combined into a single file prior to starting the pipeline.
-The pipeline can process data from multiple samples in parallel, which will help speed up the overall processing time.
-
-### Updating User-specific Variables
-
-Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
+**Region (Optional)**
+Users can define one or more regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
 
 To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
 
-A config file looks like:
-```
-species: "macaca mulatta"
-region:
-  KIR:
-    left_flank: "FCAR"
-    right_flank: "LILRA6"
-    library: "references/mamu_kir_gen_2501.fasta" 
-    minimap2: "-cx splice:hq -G16k"
-    blast: "-word_size 7"
-```
+**BUSCO**
+To evaluate the completeness of the genome assembly, a BUSCO analysis is performed. This method relies on evolutionarily informed expectations of near-universal single-copy orthologs to assess genome completeness. Various lineage-specific datasets can be used for this assessment, which are available at: https://busco.ezlab.org/list_of_lineages.html.
+
+**Nanopore** and **PacBio**
+The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. The ONT and PacBio reads do not need to be combined into a single file prior to starting the pipeline.
 
 ### Run The Pipeline
 
@@ -126,6 +81,12 @@ To execute the pipeline, ensure that the input data is placed in the specified d
 
 ```
 snakemake --cores <number_of_cores> -s scripts/Snakefile --use-conda
+```
+
+For a clean run, use:
+
+```
+snakemake --cores <number_of_cores> -s scripts/Snakefile --use-conda -q
 ```
 
 ## Output
@@ -139,17 +100,13 @@ For each sample, a set of output files is generated, organized as outlined below
         ├── hifiasm/
         │   └── All data generated by hifiasm
         ├── info/
-        │   └── Different files containing information on the assembly, like number of contigs and N50 lengths 
+        │   └── Different files containing information on the assembly, including an assembly overview in a HTML report.
         ├── intermediates/
         │   └── Intermediate working files
-        ├── ntLink/
-        │   └── Scaffolds after ntLink
-        ├── ragtag/
-        │   └── Scaffolds after ntLink and Ragtag
         ├── raws/
         │   └── Size-filtered (5000 bp) raw HiFi and ONT reads
         └── scaffolds/
-            └── All final scaffolds generated by LRS-Assembler
+            └── All final scaffolds generated by LRS-Assembler. Also intermediate scaffolds generated by ntLink and Ragtag are saved.
 ```
 
 ## Sample Data
