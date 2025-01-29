@@ -22,15 +22,26 @@ Before running LRS-Assembler, the user has to provide the location of the input 
 
 ### Updating User-specific Variables
 
-Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
+The configuration file, located at ```configs/run-config.yaml```, must be updated with user-specific variables before launching LRS-Assembler. Various settings can be modified, as outlined below.
+
+**Species**
+Users should specify the scientific name of the species being studied. 
+
+**Reference**
+A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the location of a local genome assembly and its annotation file (gff). 
+
+**Region (Optional)**
+Users can define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
 
 To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
 
-A config file looks like:
+**BUSCO**
+To evaluate the completeness of the genome assembly, a BUSCO analysis is performed. This method relies on evolutionarily informed expectations of near-universal single-copy orthologs to assess genome completeness. Various lineage-specific datasets can be used for this assessment, which are available at: https://busco.ezlab.org/list_of_lineages.html.
 
-```
-cat configs/run-config.yaml
-```
+**Nanopore** and **PacBio**
+The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. 
+
+A config file looks like:
 ```
 species: "Macaca mulatta"
 reference:
@@ -55,17 +66,14 @@ region:
 busco: "primates_odb10"
 nanopore:
   Sample_1:
-    - "/path/to/local/SampleA/nanopore/fastq1"
-    - "/path/to/local/SampleA/nanopore/fastq2"
+    - "/path/to/local/Sample_1/nanopore/fastq1"
   Sample_2:
-    - "/path/to/local/SampleB/nanopore/fastq1"
-    - "/path/to/local/SampleB/nanopore/fastq2"
+    - "/path/to/local/Sample_2/nanopore/fastq1"
 pacbio:
   Sample_1:
-    - "/path/to/local/SampleA/pacbio/bam1"
-    - "/path/to/local/SampleA/pacbio/bam2"
+    - "/path/to/local/Sample_1/pacbio/bam1"
   Sample_2:
-    - "/path/to/local/SampleB/pacbio/bam1"
+    - "/path/to/local/Sample_2/pacbio/bam1"
 ```
 
 ### Input Data
