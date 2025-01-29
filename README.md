@@ -18,7 +18,55 @@ Then install the pipeline dependencies in a new enviroment:
 
 ## Usage Guide
 
-Before running LRS-Assembler, the user has to provide the input data files in the specified structure and define the analysis variables in the configuration file. This file should specify the scientific name of the species studied and, optionally, include details on the flanking genes of the regions of interest and the location of the reference library. If necessary, the user can also adjust the mapping settings.
+Before running LRS-Assembler, the user has to provide the location of the input data files and define the analysis variables in the configuration file. This file should specify the scientific name of the species studied and, optionally, include details on the flanking genes of the regions of interest and the location of the reference library. If necessary, the user can also adjust the settings for LiftOff, BUSCO and minimap2.
+
+### Updating User-specific Variables
+
+Users should specify the scientific name of the species being studied. Optionally, users can also define regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
+
+To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
+
+A config file looks like:
+
+```
+cat configs/run-config.yaml
+```
+```
+species: "Macaca mulatta"
+reference:
+  GCF_003339765.1:
+    accession_number: "GCF_003339765.1"
+    genome: "/path/to/local/reference/genomic.fna"
+    gff: "/path/to/local.gff"
+    chr_info: "/path/to/local/chr_info_file"
+region:
+  KIR:
+    left_flank: "FCAR"
+    right_flank: "LILRA6"
+    library: "references/mamu_kir_gen_2501.fasta" 
+    minimap2: "-cx splice:hq -G16k"
+    blast: "-word_size 7"
+  MHC:
+    left_flank: "KIFC1"
+    right_flank: "GABBR1"
+    library: "references/mamu_mhc_gen_2501.fasta" 
+    minimap2: "-cx splice:hq -G16k "
+    blast: "-word_size 7"
+busco: "primates_odb10"
+nanopore:
+  Sample_1:
+    - "/path/to/local/SampleA/nanopore/fastq1"
+    - "/path/to/local/SampleA/nanopore/fastq2"
+  Sample_2:
+    - "/path/to/local/SampleB/nanopore/fastq1"
+    - "/path/to/local/SampleB/nanopore/fastq2"
+pacbio:
+  Sample_1:
+    - "/path/to/local/SampleA/pacbio/bam1"
+    - "/path/to/local/SampleA/pacbio/bam2"
+  Sample_2:
+    - "/path/to/local/SampleB/pacbio/bam1"
+```
 
 ### Input Data
 
