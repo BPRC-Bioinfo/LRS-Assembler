@@ -1,0 +1,7 @@
+name: bam2fastx
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - bam2fastx=3.0.0

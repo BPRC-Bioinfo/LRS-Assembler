@@ -1,0 +1,8 @@
+name: bbsTools
+channels:
+ - bioconda
+ - conda-forge
+dependencies:
+ - bedtools
+ - seqkit=2.3.1
+ - blast=2.16
