@@ -1,0 +1,7 @@
+name: lib_rename
+channels:
+ - bioconda
+ - conda-forge
+dependencies:
+ - biopython
+ - pandas 
