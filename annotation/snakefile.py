@@ -2,7 +2,7 @@ import pandas as pd
 from glob import glob
 import itertools
 
-configfile:"configs/macaque.yaml"
+configfile:"configs/macaque2.yaml"
 REGIONS = config['region']
 SPECIES=config['species'].replace(" ", "_")
 
@@ -10,9 +10,12 @@ GENOMES, = glob_wildcards("inputs/{genome}.fa")
 
 rule all:
     input:
+#        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt", species = SPECIES, region = REGIONS, genome = GENOMES),
+        expand("regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv", species = SPECIES, region =['LILR_M'], genome = GENOMES),
+
 #        expand("figure/{species}/annotation_flow_{genome}_{region}.png", species = SPECIES, region = ["LILR_Mmul10", "LILR_r16014"], genome = GENOMES),
 #        expand("regions/{species}/{genome}/{region}/{genome}_{region}_status.csv", species = SPECIES, region = REGIONS, genome = GENOMES),
-        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt", species = SPECIES, region = REGIONS, genome = GENOMES),
+#        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt", species = SPECIES, region = REGIONS, genome = GENOMES),
 #        "regions/homo_sapiens/GCA_018505865.1-HG02109_hap1/IGH/intact_region/GCA_018505865.1-HG02109_hap1_IGH.bed",
 #        "regions/homo_sapiens/GCA_018505865.1-HG02109_hap1/IGH/region_fasta/GCA_018505865.1-HG02109_hap1_IGH_complete.fa"
 
@@ -350,7 +353,7 @@ rule region_intact_queries_lilr:
         "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups"
     shell:
         """
-        python analyse_paf_lilr.py {input} {params}
+        python analyse_paf_genomic.py {input} {params}
         """
 
 rule region_intact_filter_queries:

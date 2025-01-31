@@ -34,14 +34,48 @@ def group_by_ref_name(file_path):
         if ref_name not in groups:
             groups[ref_name] = []
         groups[ref_name].append((ref_start_coord, ref_end_coord, chr_start_coord, chr_end_coord, length, original_line))
+
 #    print (groups)
 
-
-    # Initialize the list for the dataframe data
+    # Process the number of subgroups
     result_data = []
 
     # Now process each group
     for ref_name, group_lines in groups.items():
+        # Processing multiple hits
+        print (group_lines)
+        print (len(group_lines))
+        current_ref_start = None
+        for i, (ref_start_coord, ref_end_coord, chr_start_coord, chr_end_coord, length, original_line) in enumerate(group_lines):
+            if current_ref_start is None:  # First line of the group
+                current_ref_start = ref_start_coord
+                print ("First line")
+#                print(current_ref_start)
+            elif ref_start_coord == current_ref_start or ref_start_coord < current_ref_start:
+                print ("Fishing")
+#                current_subgroup.append((ref_start_coord, ref_end_coord, chr_start_coord, chr_end_coord, length, original_line))
+            # if multiple lines a
+#            if i > 0 and ref_start_coord < group_lines[i - 1][0]:
+#                print (i)
+#                print (group_lines[i - 1][0])
+
+
+
+
+#        if len(group_lines) > 1:
+#            print (group_lines)
+#            subgroups = []
+#            for i, (ref_start_coord, ref_end_coord, chr_start_coord, chr_end_coord, length, original_line) in enumerate(group_lines):
+
+                # If the next ref_start_coord is smaller, start a new subgroup
+#                if i > 0 and ref_start_coord < group_lines[i - 1][0]:
+#                    print (i)
+#                    print (ref_start_coord)
+#                    print (group_lines[i - 1][0])
+#                    subgroups.append(current_subgroup)
+#                print (subgroups)
+#        else:
+#            print ("single hit")
         # Initialize subgroups
         subgroups = []
         current_subgroup = []
@@ -66,7 +100,8 @@ def group_by_ref_name(file_path):
 
 #            for sublist in subgroup:
 #                entry_count = len(sublist)
-#                print (entry_count) 
+#                print (entry_count)
+#                print (sublist)
 
             # Calculate alignment length if BLAST results present
             aligned_length = sum(int(parts[6]) if len((parts := last.strip("\n").split(" "))) > 10 else 0 for _, _, _, _, _, last in subgroup) / length *100
@@ -119,6 +154,7 @@ def group_by_ref_name(file_path):
                     previous_end_coord = int(line_parts[2])
 #                print ("fragments here")
 #                print (fragment_groups)
+
                 fragment_percent = sum([int(row[4][6]) for row in fragment_groups]) / length * 100
                 fragment_chr_min_start_coord = min(int(row[2]) for row in fragment_groups)
                 fragment_chr_max_end_coord = max(int(row[3]) for row in fragment_groups)
