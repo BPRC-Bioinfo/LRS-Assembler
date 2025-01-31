@@ -26,7 +26,6 @@ rule all:
     input:
         expand("results/{sample}/info/{sample}_{ref}_report.html", sample = SAMPLES, ref = REFERENCE),
 
-<<<<<<< HEAD
 rule refPrepare:
     output:
         zip = temp("{ref}.zip"),
@@ -59,14 +58,6 @@ rule refPrepare:
             rm -r {params.dir}
         fi
         """
-=======
-        expand("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv", sample = SAMPLES, ref = REFERENCE),
-#        expand("reference/{ref}.info", ref = REFERENCE),
-#        expand("results/{sample}/info/{sample}_nanopore_stat_filtered.txt", sample = SAMPLES, seqMachine = ["nanopore","pacbio"]),
-#        expand("results/{sample}/info/{sample}_{seqMachine}_stat_filtered.txt", sample = SAMPLES, seqMachine = ["nanopore","pacbio"]),
-#        expand("fastq_files/nanopore/{sample}_fastq.txt", sample=SAMPLES),
-#        expand("fastq_files/pacbio/{sample}_fastq.txt", sample=SAMPLES)
->>>>>>> annotation
 
 rule combine_filter_nanopore_fastq:
     input:
