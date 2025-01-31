@@ -1,0 +1,8 @@
+name: DNA_viewer
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - dna_features_viewer=3.1.3
+  - pandas
+  - openpyxl=3.1.5
