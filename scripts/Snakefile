@@ -270,12 +270,13 @@ rule prepare_genome_reference:
         "../envs/datasets.yaml"
     retries: 3
     params:
-        genome = lambda wildcards: config["reference"][wildcards.ref]['genome']
+        genome = lambda wildcards: config["reference"][wildcards.ref]['genome'],
+        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
     shell:
         """
         if [ ! -f {params.genome} ]; then
             echo "Genome file not found locally, downloading from NCBI"
-            datasets download genome accession {wildcards.ref} --filename {wildcards.ref}.zip --include genome
+            datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include genome
             unzip {wildcards.ref}.zip -d "reference"
             mv reference/ncbi_dataset/data/{wildcards.ref}/{wildcards.ref}*.fna {output}
         else
@@ -295,12 +296,13 @@ rule prepare_gff_reference:
         "../envs/datasets.yaml"
     retries: 3
     params:
+        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
         gff = lambda wildcards: config["reference"][wildcards.ref]['gff']
     shell:
         """
         if [ ! -f {params.gff} ]; then
             echo "Gff file not found locally, downloading from NCBI"
-            datasets download genome accession {wildcards.ref} --filename {wildcards.ref}.zip --include gff3
+            datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include gff3
             unzip {wildcards.ref}.zip -d "reference"
             mv reference/ncbi_dataset/data/{wildcards.ref}/genomic.gff {output}
         else
@@ -320,17 +322,18 @@ rule prepare_chromosome_reference:
     conda:
         "../envs/datasets.yaml"
     params:
-        lambda wildcards: config["reference"][wildcards.ref]['info']
+        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
+        info = lambda wildcards: config["reference"][wildcards.ref]['chr_info']
     shell:
         """
         if [ ! -f {params} ]; then
             echo "Info file not found locally, downloading from NCBI"
-            datasets download genome accession {wildcards.ref} --filename {wildcards.ref}.zip --include seq-report
+            datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include seq-report
             unzip {wildcards.ref}.zip -d "reference"
             python scripts/json_parse.py reference/ncbi_dataset/data/{wildcards.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output} 
         else
-            echo "Using local genome file {params}"
-            cp {params} {output}
+            echo "Using local genome file {params.info}"
+            cp {params.info} {output}
         fi
         if [ -f "reference/README.md" ]; then
             rm reference/README.md
