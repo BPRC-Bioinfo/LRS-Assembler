@@ -2,35 +2,30 @@ species: "Macaca mulatta"
 reference:
   GCF_003339765.1:
     dataset: "GCF_003339765.1"
-    genome: "/path/to/local/reference/GCF_003339765.1_Mmul_10_genomic.fna.gz"
-    gff: "genomes/GCF_003339765.1/GCF_003339765.1.gff"
-    info: "/path/to/local/info_file"
+    genome: "/path/to/local/reference/genomic.fna"
+    gff: "/path/to/local/reference/file.gff"
+    info: "/path/to/local/referemce/file.info"
 region:
-  KIR:
-    left_flank: "FCAR"
-    right_flank: "LILRA6"
-    library: "references/mamu_kir_gen_2501.fasta" 
+  Region1:
+    left_flank: "Flank1"
+    right_flank: "Flank2"
+    library: "/path/to/references/annotation.fasta" 
     minimap2: "-cx splice:hq -G16k"
     blast: "-word_size 7"
-  MHC:
-    left_flank: "KIFC1"
-    right_flank: "GABBR1"
-    library: "references/mamu_mhc_gen_2501.fasta" 
-    minimap2: "-cx splice:hq -G16k "
-    blast: "-word_size 7"
-  MHC_nuc:
-    left_flank: "KIFC1"
-    right_flank: "GABBR1"
-    library: "references/mamu_mhc_nuc_2501.fasta" 
+  Region2:
+    left_flank: "Flank2"
+    right_flank: "Flank2"
+    library: "/path/to/references/annotation2.fasta" 
     minimap2: "-cx splice:hq -G16k "
     blast: "-word_size 7"
 nanopore:
-  EAW:
-    - "/mnt/CGRBackup/EAW/nanopore/EAW_SRE25_2-8-2023/EAW_SRE25_2-8-2023_fastq"
-    - "/mnt/CGRBackup/EAW/nanopore/EAW_SRE25_26-07-23/EAW_SRE25_26-07-23_fastq"
-    - "/mnt/CGRBackup/EAW/nanopore/EAW_SRE40_2-8-2023/EAW_SRE40_2-8-2023_fastq"
-    - "/mnt/CGRBackup/EAW/nanopore/EAW_WGS_25-07-23/EAW_WGS_25-07-23_fastq"
-    - "/mnt/CGRBackup/EAW/nanopore/EAW_WG_pro_14-8-23/EAW_WG_pro_14-8-23_fastq"
+  Sample_1:
+    - "/path/to/local/Sample_1/nanopore/fastq1"
+  Sample_2:
+    - "/path/to/local/Sample_2/nanopore/fastq1"
 pacbio:
-  EAW:
-    - "/mnt/CGRBackup/EAW/pacbio/1_C01/hifi_reads"
+  Sample_1:
+    - "/path/to/local/Sample_1/pacbio/bam1"
+  Sample_2:
+    - "/path/to/local/Sample_2/pacbio/bam1"
+
