@@ -1,0 +1,12 @@
+species: "homo sapien"
+reference:
+- "GCF_009914755.1"
+- "GCF_000001405.40"
+region:
+  IGH:
+    left_flank: "OR10G3"
+    right_flank: "DAD1"
+  KIR-LILR:
+    left_flank: "FCAR"
+    right_flank: "RPS9"
+    annotation: "annotation/KIR-LILR_lib.fasta"
