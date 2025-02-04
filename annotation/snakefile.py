@@ -11,7 +11,7 @@ GENOMES, = glob_wildcards("inputs/{genome}.fa")
 rule all:
     input:
 #        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt", species = SPECIES, region = REGIONS, genome = GENOMES),
-        expand("regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv", species = SPECIES, region =['LILR_M'], genome = GENOMES),
+        expand("regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv", species = SPECIES, region = REGIONS, genome = GENOMES),
 
 #        expand("figure/{species}/annotation_flow_{genome}_{region}.png", species = SPECIES, region = ["LILR_Mmul10", "LILR_r16014"], genome = GENOMES),
 #        expand("regions/{species}/{genome}/{region}/{genome}_{region}_status.csv", species = SPECIES, region = REGIONS, genome = GENOMES),
