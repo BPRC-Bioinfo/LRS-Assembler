@@ -1,0 +1,7 @@
+name: lib_prepare
+channels:
+  - bioconda
+  - conda-forge
+  - default
+dependencies:
+  - biopython=1.85 
