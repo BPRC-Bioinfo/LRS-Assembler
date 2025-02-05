@@ -16,7 +16,11 @@ benchmark*/*
 figures/*
 flanking_genes/*
 .snakemake/*
-
+annotation/inputs/*
+annotation/flanking_genes/*
+annotation/map_temp/*
+annotation/regions/*
+annotaiton/references/*
 
 # Ignore files
 *swp

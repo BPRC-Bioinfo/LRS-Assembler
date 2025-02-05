@@ -11,10 +11,12 @@ PSAMPLES = list(config["pacbio"].keys())
 
 SAMPLES = list(set(NSAMPLES) & set(PSAMPLES))
 
+print ("Working samples")
 print (SAMPLES)
 
 REFERENCE = list(set(config["reference"].keys()))
 
+print ("reference using")
 print (REFERENCE)
 
 wildcard_constraints:
@@ -29,45 +31,7 @@ WVALS = [100, 250, 500]
 rule all:
     input:
         expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
-#        expand("results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE),
-#        expand("results/{sample}/scaffolds/ragtag/{ref}/{hap}/{sample}_hybridPN_denovo_{hap}.fa", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE)
-#        expand("annotated_{species}_{region}_{sample}_{hap}_{ref}.txt", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE),
-#        expand("flanking_genes/{species}/{region}.fasta", species = SPECIES, region = REGIONS),
-#        expand("flanking_{species}_{region}_{sample}_{hap}_{ref}.txt", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = [1,2], ref = REFERENCE),
 
-
-rule refPrepare:
-    output:
-        zip = temp("{ref}.zip"),
-        fa = "genomes/{ref}/{ref}.fna",
-        gff = "genomes/{ref}/{ref}.gff",
-        json = "genomes/{ref}/{ref}.info"
-    conda:
-        "../envs/datasets.yaml"
-    params:
-        rm = "genomes/README.md",
-        json = "genomes/ncbi_dataset/data/assembly_data_report.jsonl",
-        json2 = "genomes/ncbi_dataset/data/dataset_catalog.json",
-        dir = directory("genomes/ncbi_dataset/data/{ref}"),
-    retries: 3
-    benchmark:
-        "pipe_benchmarks/00_{ref}_download.bench"
-    shell:
-        """
-        if [[ {wildcards.ref} != "none" ]]; then
-            datasets download genome accession {wildcards.ref} --filename {output.zip} --include gff3,genome,seq-report
-            unzip {output.zip} -d "genomes"
-            # More than one fna?
-            mv genomes/ncbi_dataset/data/{wildcards.ref}/{wildcards.ref}*.fna {output.fa}
-            mv genomes/ncbi_dataset/data/{wildcards.ref}/genomic.gff {output.gff}
-            mv genomes/ncbi_dataset/data/{wildcards.ref}/sequence_report.jsonl {output.json}
-            rm -r {params}
-        else
-            mkdir -p {params.dir}
-            touch {output}
-            rm -r {params.dir}
-        fi
-        """
 
 rule combine_filter_nanopore_fastq:
     input:
@@ -336,7 +300,7 @@ rule prepare_chromosome_reference:
         info = lambda wildcards: config["reference"][wildcards.ref]['chr_info']
     shell:
         """
-        if [ ! -f {params} ]; then
+        if [ ! -f {params.info} ]; then
             echo "Info file not found locally, downloading from NCBI"
             datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include seq-report
             unzip {wildcards.ref}.zip -d "reference"
