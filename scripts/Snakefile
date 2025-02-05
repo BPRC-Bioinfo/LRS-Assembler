@@ -1,7 +1,7 @@
 import os
 import glob
 
-configfile: "configs/macaque.yaml"
+configfile: "configs/run-config.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
 REGIONS = config['region']
@@ -30,8 +30,8 @@ WVALS = [100, 250, 500]
 
 rule all:
     input:
-#        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
-        expand("results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",sample = SAMPLES, ref = REFERENCE, species = SPECIES ),
+        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
+#        expand("results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",sample = SAMPLES, ref = REFERENCE, species = SPECIES ),
 
 
 rule combine_filter_nanopore_fastq:
@@ -251,9 +251,10 @@ rule prepare_genome_reference:
         """
         if [ ! -f {params.genome} ]; then
             echo "Genome file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include genome
-            unzip {wildcards.ref}.zip -d "reference"
-            mv reference/ncbi_dataset/data/{wildcards.ref}/{wildcards.ref}*.fna {output}
+            datasets download genome accession {params.ref} --filename {wildcards.ref}"_genome.zip" --include genome
+            unzip {wildcards.ref}"_genome.zip" -d "reference"
+            mv reference/ncbi_dataset/data/{params.ref}/{params.ref}*.fna {output}
+            rm {wildcards.ref}"_genome.zip"
         else
             echo "Using local genome file {params.genome}"
             cp {params.genome} {output}
@@ -277,9 +278,10 @@ rule prepare_gff_reference:
         """
         if [ ! -f {params.gff} ]; then
             echo "Gff file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include gff3
-            unzip {wildcards.ref}.zip -d "reference"
-            mv reference/ncbi_dataset/data/{wildcards.ref}/genomic.gff {output}
+            datasets download genome accession {params.ref} --filename {wildcards.ref}"_gff.zip" --include gff3
+            unzip {wildcards.ref}"_gff.zip" -d "reference"
+            mv reference/ncbi_dataset/data/{params.ref}/genomic.gff {output}
+            rm {wildcards.ref}"_gff.zip"
         else
             echo "Using local genome file {params.gff}"
             cp {params.gff} {output}
@@ -303,9 +305,10 @@ rule prepare_chromosome_reference:
         """
         if [ ! -f {params.info} ]; then
             echo "Info file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {wildcards.ref}.zip --include seq-report
-            unzip {wildcards.ref}.zip -d "reference"
-            python scripts/json_parse.py reference/ncbi_dataset/data/{wildcards.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output} 
+            datasets download genome accession {params.ref} --filename {wildcards.ref}"_info.zip" --include seq-report
+            unzip {wildcards.ref}"_info.zip" -d "reference"
+            python scripts/json_parse.py reference/ncbi_dataset/data/{params.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output}
+            rm {wildcards.ref}"_info.zip"
         else
             echo "Using local genome file {params.info}"
             cp {params.info} {output}
