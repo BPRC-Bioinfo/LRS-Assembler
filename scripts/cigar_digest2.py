@@ -1,4 +1,4 @@
-# v0.3
+# v0.4
 # Giang Le & Jaimy
 
 import pandas as pd
@@ -107,6 +107,7 @@ def process_paf_file(paf_file_path: str) -> list:
             query_start = int(fields[2])  # Query start position
             rname = fields[5]  # Reference name (e.g., chromosome or contig)
             ref_start = int(fields[7])  # Reference start position
+            strand = fields[4]  # Strand information (+ or -)
             cigar = None
 
             # Find the 'cg:Z:' tag for the CIGAR string
@@ -121,11 +122,12 @@ def process_paf_file(paf_file_path: str) -> list:
             # Extract match regions and counts
             merged_coords = extract_match_regions_and_counts(cigar, query_start, ref_start)
 
-            # Add 'CIGAR', 'Query Name', and 'Reference Name' to each row
+            # Add 'CIGAR', 'Query Name', 'Reference Name', and 'Strand' to each row
             for row in merged_coords:
                 row['CIGAR'] = cigar
                 row['Query_name'] = qname
                 row['Target_name'] = rname
+                row['Strand'] = strand  # Add strand information
                 all_rows.append(row)
 
     return all_rows
@@ -140,7 +142,7 @@ def main(input_file: str = None, output_file: str = None):
     all_rows = process_paf_file(args.input_file)
     df = pd.DataFrame(all_rows)
 
-    df = df[['Query_name', 'Target_name', 'Query_start', 'Query_end', 'Target_start', 'Target_end', 'CIGAR', 'Matches', 'Insertions', 'Deletions']]
+    df = df[['Query_name', 'Target_name', 'Query_start', 'Query_end', 'Target_start', 'Target_end', 'CIGAR', 'Matches', 'Insertions', 'Deletions', 'Strand']]
     df.to_csv(args.output_file, index=False, sep = '\t')
 
 if __name__ == "__main__":

@@ -22,9 +22,9 @@ def plot(df, sample_name) -> None:
     ax.set_title(f"Annotation report for {sample_name}", loc='left', weight='bold')
 
     # Save figures with the sample name included in the filenames
-    ax.figure.savefig(f'figure/annotation_flow_{sample_name}.png', bbox_inches='tight', dpi=600)
-    ax.figure.savefig(f'figure/annotation_flow_{sample_name}.svg', bbox_inches='tight', dpi=600)
-    ax.figure.savefig(f'figure/annotation_flow_{sample_name}.pdf', bbox_inches='tight', dpi=600)
+    ax.figure.savefig(f'figures/{sample_name}.png', bbox_inches='tight', dpi=600)
+    ax.figure.savefig(f'figures/{sample_name}.svg', bbox_inches='tight', dpi=600)
+    ax.figure.savefig(f'figures/{sample_name}.pdf', bbox_inches='tight', dpi=600)
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     args = parser.parse_args()
 
     # Read the Excel file using the provided input path
-    df = pd.read_excel(args.input_file)
+    df = pd.read_csv(args.input_file, sep = "\t")
 
     # Process the dataframe as before
     df["Simple name"] = df["Group_name"].str.split("|").str[0]

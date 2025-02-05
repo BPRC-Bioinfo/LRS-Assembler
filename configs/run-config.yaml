@@ -1,10 +1,10 @@
-species: "Macaca mulatta"
+species: "species name"
 reference:
-  GCF_003339765.1:
-    dataset: "GCF_003339765.1"
+  reference_name:
+    accession_number: "NCBI accession"
     genome: "/path/to/local/reference/genomic.fna"
-    gff: "/path/to/local/reference/file.gff"
-    info: "/path/to/local/referemce/file.info"
+    gff: "/path/to/local.gff"
+    chr_info: "/path/to/local/chr_info_file"
 region:
   Region1:
     left_flank: "Flank1"

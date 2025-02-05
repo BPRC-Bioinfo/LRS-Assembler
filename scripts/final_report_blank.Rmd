@@ -1,0 +1,142 @@
+---
+title: "LRS-Assember pipeline"
+author: "BPRC-CGR"
+date: "`r paste('Datum:', format(Sys.Date(), '%d-%m-%Y'))`"
+version: "0.1"
+params:
+  sample: "sample"
+  reference: "reference"
+  chr: FALSE
+output:
+  html_document:
+    fig_caption: yes
+    df_print: kable
+  word_document:
+    fig_caption: yes
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+# Do not print r codes
+knitr::opts_chunk$set(echo = FALSE)
+# Scientific numbers
+options(scipen = 999)
+
+library(ggplot2)
+library(knitr)
+library(tidyverse)
+
+```
+
+```{r setup_sample, echo = FALSE}
+subject <- params$sample
+reference <- params$reference
+path = paste0("../results/",subject,"/info/")
+print (list.files(path))
+print (subject)
+print (reference)
+```
+
+
+```{r raw_reads, results = 'asis', echo = FALSE}
+raw_reads_path <- paste0(path,subject,"_filtered_reads_stats.txt")
+raw_reads <- read.delim(raw_reads_path, sep = " ")
+
+```
+
+## Raw reads stats
+
+
+```{r table, results = 'asis', echo = FALSE}
+kable(raw_reads, digits=2)
+```
+
+## Genome assembly
+
+
+```{r genome_info, results = 'asis', echo = FALSE}
+genome_path <- paste0(path,subject,"_hybridPN_denovo_ntlink_ragtag_",reference,"_stats.csv")
+print (genome_path)
+genome_info <- read.delim(genome_path, sep = " ")
+rownames(genome_info) <- c("BUSCO completeness", "Contigs", "N50 contigs", "Scaffolds", "N50 scaffolds")
+
+kable(genome_info, digits=2)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+benchmark_files <- list.files(path = paste0("../results/",subject,"/benchmarks/"), pattern = "*.bench", full.names = TRUE)
+
+# Extract step number and name from file names
+extract_step_info <- function(file) {
+  file_name <- basename(file)
+  step_num <- as.numeric(sub("^([0-9]+).*", "\\1", file_name))  # Extract the leading number (step_num)
+  sample_name <- sub("^[0-9]+_([^_]+)_.*\\.bench$", "\\1", file_name)  # Extract the sample name (text/number between the first and second underscores)
+  step_name <- sub("^[0-9]+_[^_]+_(.*)\\.bench$", "\\1", file_name)  # Extract the step name (everything after the second underscore)
+  return(data.frame(file = file, step_num = step_num, sample_name = sample_name, step_name = step_name, stringsAsFactors = FALSE))
+}
+
+
+# Create a data frame of all benchmark files with their step numbers and names
+benchmark_info <- map_dfr(benchmark_files, extract_step_info)
+# Read each file and add its corresponding step information
+benchmark_data <- benchmark_info %>%
+  rowwise() %>%
+  mutate(benchmark = list(read.table(file, header = TRUE, sep = "\t"))) %>%
+  unnest(cols = c(benchmark)) %>%
+  arrange(step_num)
+
+# Convert 'h:m:s' to seconds if applicable (replace with correct column name for time)
+convert_to_seconds <- function(time_str) {
+  time_parts <- as.numeric(strsplit(time_str, ":")[[1]])
+  return(time_parts[1] * 3600 + time_parts[2] * 60 + time_parts[3])
+}
+
+# Assuming 'h.m.s' is the time column and 'max_rss' is the peak RAM in the benchmark data
+benchmark_data <- benchmark_data %>%
+  mutate(duration_seconds = sapply(h.m.s, convert_to_seconds))
+
+
+# Group tasks by step number, and also add peak RAM
+grouped_data <- benchmark_data %>%
+  group_by(step_num, step_name) %>%
+  summarise(total_duration = sum(duration_seconds),
+            peak_ram = max(max_rss, na.rm = TRUE))
+
+# Combine step_num and step_name into a single label
+grouped_data$step_label <- paste(grouped_data$step_num, grouped_data$step_name, sep = ": ")
+
+# Sort the data based on step_num
+grouped_data <- grouped_data[order(grouped_data$step_num), ]
+
+# Convert total_duration to hours and peak_ram to GB
+grouped_data$total_duration <- grouped_data$total_duration / 3600  # Convert seconds to hours
+grouped_data$peak_ram <- grouped_data$peak_ram / 1024  # Convert MB to GB
+
+# Sort the data based on step_num
+grouped_data <- grouped_data[order(grouped_data$step_num), ]
+
+print (grouped_data)
+
+# Create the plot
+ggplot(grouped_data, aes(x = factor(step_label, levels = unique(step_label)))) +
+  geom_bar(aes(y = total_duration), stat = "identity", fill = "steelblue", alpha = 0.7) +
+  geom_line(aes(y = peak_ram / max(peak_ram) * max(total_duration), group = 1, color = "Peak RAM"), size = 1.5) +
+  geom_point(aes(y = peak_ram / max(peak_ram) * max(total_duration), color = "Peak RAM"), size = 3) +
+  scale_y_continuous(
+    name = "Duration (seconds)",
+    sec.axis = sec_axis(~ . * max(grouped_data$peak_ram) / max(grouped_data$total_duration), name = "Peak RAM (MB)")
+  ) +
+  labs(x = "Step Number and Name", color = "Metric") +
+  theme_minimal() +
+  theme(
+    axis.title.y.right = element_text(color = "red"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+

@@ -1,0 +1,12 @@
+species: "macaca mulatta"
+reference: "ref/GCA_003339765.3_Mmul_10_genomic.fna"
+region:
+  KIR-LILR:
+    left_flank: "Flank1"
+    right_flank: "Flank2"
+    chromosome: 7
+    annotation: "annotation/interest_region_lib.fasta"
+mode: "pacnano"
+raws:
+  nanopore: "raws/nanopore.fastq.gz"
+  pacbio: "raws/pacpore/pacbio.fastq.gz"

@@ -1,7 +1,0 @@
-name: ntlink
-channels:
-  - bioconda
-  - conda-forge
-  - defaults
-dependencies:
-  - ntlink=1.3.9
