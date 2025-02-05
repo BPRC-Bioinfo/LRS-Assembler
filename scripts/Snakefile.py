@@ -19,7 +19,8 @@ print (REFERENCE)
 
 wildcard_constraints:
     sample="|".join(SAMPLES),
-    hap = "hap1|hap2"
+    hap = "hap1|hap2",
+    ref = "|".join(REFERENCE)
 
 KVALS = [24,32,40]
 WVALS = [100, 250, 500]
@@ -27,10 +28,10 @@ WVALS = [100, 250, 500]
 
 rule all:
     input:
-        expand("results/{sample}/info/{sample}_{ref}_report.html", sample = SAMPLES, ref = REFERENCE),
+        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
 #        expand("results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE),
 #        expand("results/{sample}/scaffolds/ragtag/{ref}/{hap}/{sample}_hybridPN_denovo_{hap}.fa", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE)
-        expand("flanking_{species}_{region}_{sample}_{hap}_{ref}.txt", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE),
+#        expand("annotated_{species}_{region}_{sample}_{hap}_{ref}.txt", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = ["hap1","hap2"], ref = REFERENCE),
 #        expand("flanking_genes/{species}/{region}.fasta", species = SPECIES, region = REGIONS),
 #        expand("flanking_{species}_{region}_{sample}_{hap}_{ref}.txt", species = SPECIES, region = REGIONS, sample = SAMPLES, hap = [1,2], ref = REFERENCE),
 
@@ -561,17 +562,18 @@ rule full_report:
         sc = "scripts/final_report_blank.Rmd",
         stats = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv",
         raw_stats = "results/{sample}/info/{sample}_filtered_reads_stats.txt",
+        annotate = "results/{sample}/info/annotated_{species}_{sample}_{ref}.txt",
     output:
-        html = "results/{sample}/info/{sample}_{ref}_report.html"
+        html = "results/{sample}/info/{sample}_{ref}_{species}_report.html"
     conda:
         "../envs/report.yaml"
     params:
         "results/{sample}/info/"
     log:
-        "results/{sample}/logs/{sample}_{ref}_report.log"
+        "results/{sample}/logs/{sample}_{ref}_{species}_report.log"
     shell:
         """
-        Rscript -e "rmarkdown::render('{input.sc}', output_dir = '{params}', output_file=paste0('{wildcards.sample}_{wildcards.ref}','_report'), output_format='html_document',params=list(sample='{wildcards.sample}',reference='{wildcards.ref}'))" 2> {log}
+        Rscript -e "rmarkdown::render('{input.sc}', output_dir = '{params}', output_file=paste0('{wildcards.sample}_{wildcards.ref}_{wildcards.species}','_report'), output_format='html_document',params=list(sample='{wildcards.sample}',reference='{wildcards.ref}'))" 2> {log}
         echo "Final report generated"
         """
 
@@ -579,13 +581,13 @@ include:"../annotation/annotation.py"
 
 rule running_annotation:
     input:
-        "regions/{species}/{sample}/{region}/flanking/{sample}_{hap}_{ref}_{region}_annotation.finish"
+        expand("regions/{{species}}/{{sample}}/{region}/flanking/{{sample}}_{hap}_{{ref}}_{region}_annotation.finish", region = REGIONS, hap = ["hap1","hap2"])
     output:
-        "annotated_{species}_{region}_{sample}_{hap}_{ref}.txt"
+        "results/{sample}/info/annotated_{species}_{sample}_{ref}.txt"
     shell:
         """
         # Processing the intermediate output
-        cp {input} {output}
+        cat {input} > {output}
         """
 
 rule main_task_test:
