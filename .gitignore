@@ -1,7 +1,25 @@
 
-# Folder
+
+
+
+# Ignore directories
+
+map_temp/*
+old*/*
+regions/*
+results/*
+genomes/*
 raws/*
+reference/*
+Mmul10/*
+benchmark*/*
+figures/*
+flanking_genes/*
+.snakemake/*
 
 
-#files
-ref_snake
+# Ignore files
+*swp
+configs/macaque.yaml
+configs/run-config3.ymal
+scripts/Snakefile_old

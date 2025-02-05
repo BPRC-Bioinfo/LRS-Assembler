@@ -6,20 +6,22 @@ def filter_longest_aligned_length(df):
 
     Args:
         df (pd.DataFrame): Input DataFrame with columns like 'Group_name', 'Aligned Length', 
-                           'identity_percent', 'mismatch_sum', 'gap_sum', 'chr_start', 'chr_end'.
+                           'identity_percent', 'blast_mismatch', 'blast_gap', 'chr_start', 'chr_end'.
 
     Returns:
         pd.DataFrame: Filtered DataFrame with the best hits based on the specified criteria.
     """
-    # Sort the dataframe by identity_percent (descending), then by mismatch_sum and gap_sum (ascending)
+    # Sort the dataframe by identity_percent (descending), then by blast_mismatch and blast_gap (ascending)
 
     pd.set_option('display.max_rows', None)  # Show all rows
     pd.set_option('display.max_columns', None)  # Show all columns (if necessary)
     pd.set_option('display.width', None)  # Auto-adjust the width to display all columns
-    pd.set_option('display.max_colwidth', None) 
+    pd.set_option('display.max_colwidth', None)
 
-    print ("Step1: filter by identity_percent, mismatch_sum and gap_sum")  
-    df_sorted = df.sort_values(by=['identity_percent', 'mismatch_sum', 'gap_sum'], ascending=[False, True, True])
+#    print(df)
+
+    print ("Step1: filter by identity_percent, blast_mismatch and blast_gap")  
+    df_sorted = df.sort_values(by=['identity_percent', 'blast_mismatch', 'blast_gap'], ascending=[False, True, True])
     print ("Step1: Group by Group_name") 
     df_best_hits = df_sorted.groupby('Group_name', as_index=False).first()
 
@@ -31,7 +33,7 @@ def filter_longest_aligned_length(df):
     print ("Step2")
     print (df_best_hits)
 
-    df_best_hits = (df_best_hits.sort_values(["identity_percent", "mismatch_sum"], ascending=[False, True]).groupby(["chr_start", "chr_end"], as_index=False).first()) 
+    df_best_hits = (df_best_hits.sort_values(["identity_percent", "blast_mismatch"], ascending=[False, True]).groupby(["chr_start", "chr_end"], as_index=False).first()) 
 #    print (df_best_hits)
     df_best_hits = (df_best_hits.sort_values(["chr_start", "aligned_percent"], ascending=[False, False]).groupby("chr_start", as_index=False).first()) 
 #    print (df_best_hits)
@@ -43,9 +45,9 @@ def filter_longest_aligned_length(df):
 
     df_final = pd.concat([df_best_hits_100, df_best_hits])
 
-    df_final = df_final[df_final['gap_sum'] == 0]
+    df_final = df_final[df_final['blast_gap'] == 0]
 
-    df_final = (df_final.sort_values(["identity_percent", "mismatch_sum", "insertions", "deletion"], ascending=[False, True, True, True]).groupby(["chr_start", "chr_end"], as_index=False).first()) 
+    df_final = (df_final.sort_values(["identity_percent", "blast_mismatch", "minimap_ins", "minimap_del"], ascending=[False, True, True, True]).groupby(["chr_start", "chr_end"], as_index=False).first()) 
    
     df_final = df_final.sort_values(by=['chr_start', 'identity_percent'], ascending=[True, False])
 
@@ -96,4 +98,4 @@ if __name__ == "__main__":
 
     # Write the filtered DataFrame to Excel
     filtered_df.to_excel(args.output_file + ".xlsx", index=False, sheet_name="filtered")
-    filtered_df.to_csv(args.output_file + ".csv", index=False)
+    filtered_df.to_csv(args.output_file + ".csv", sep='\t' ,index=False)

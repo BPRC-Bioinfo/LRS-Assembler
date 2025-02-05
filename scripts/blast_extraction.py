@@ -39,12 +39,10 @@ def process_data(info_df, blast_df):
   
   # Create a list of column names (assuming they are strings)
 #  column_names = [i for i in range(12, 23)]
-  print (result_df)
-  column_names = [i for i in range(12, 23) if i != 19]  # Columns 12 to 23
-  result_df[column_names] = result_df[column_names].apply(lambda x: pd.to_numeric(x, errors='coerce').astype('Int64'))
-  result_df = result_df.replace({np.nan: pd.NA})
-#  result_df.iloc[:, 12:24] = result_df.iloc[:, 12:24].fillna(0).astype(int)
-#  result_df.iloc[:, 12:24] = result_df.iloc[:, 12:24].apply(pd.to_numeric, downcast='integer', errors='coerce').astype('Int64')
+#  print (result_df)
+  column_names = [i for i in range(12, 23) if i not in (19, 20)]  # Columns 12 to 23
+  result_df[column_names] = result_df[column_names].fillna(-1).astype(int, errors = "ignore")
+  result_df.replace(to_replace=-1, value = None, inplace = True)
   print (result_df)
   
   return result_df
@@ -64,4 +62,4 @@ if __name__ == "__main__":
     exit(1)
 
   result_df = process_data(info_df, blast_df)
-  result_df.to_csv(args.output, sep=" ", index=False, header=False)
+  result_df.to_csv(args.output, sep="\t", index=False, header=False)
