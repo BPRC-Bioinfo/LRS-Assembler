@@ -1,7 +1,7 @@
 import os
 import glob
 
-configfile: "configs/run-config.yaml"
+configfile: "configs/macaque.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
 REGIONS = config['region']
@@ -30,7 +30,8 @@ WVALS = [100, 250, 500]
 
 rule all:
     input:
-        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
+#        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
+        expand("results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",sample = SAMPLES, ref = REFERENCE, species = SPECIES ),
 
 
 rule combine_filter_nanopore_fastq:
@@ -451,12 +452,12 @@ rule liftOff:
         genome = "reference/{ref}.fna",
         gff = "reference/{ref}.gff",
         fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa",
-        chrInfo = "results/{sample}/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt"
+        chrInfo = "results/{sample}/scaffolds/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt"
     output:
-        temp = temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}.gff"),
-        chrs = temp("results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}_chrs.txt"),
-        unmap = "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}_liftoff_unmapped.txt",
-        dir = temp(directory("results/{sample}/ragtag/{ref}/liftoff_hybridPN")),
+        temp = temp("results/{sample}/scaffolds/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}.gff"),
+        chrs = temp("results/{sample}/scaffolds/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}_chrs.txt"),
+        unmap = "results/{sample}/scaffolds/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}_liftoff_unmapped.txt",
+        dir = temp(directory("results/{sample}/scaffolds/ragtag/{ref}/liftoff_hybridPN")),
     benchmark:
         "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_liftoff.bench"
     conda:
@@ -475,7 +476,7 @@ rule liftOff:
 
 rule gff_correct:
     input:
-        "results/{sample}/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}.gff",
+        "results/{sample}/scaffolds/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}.gff",
     output:
         gff = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",
     benchmark:
