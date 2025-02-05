@@ -5,6 +5,7 @@ reference:
     genome: "/path/to/local/reference/genomic.fna"
     gff: "/path/to/local.gff"
     chr_info: "/path/to/local/chr_info_file"
+busco: "busco_database"
 region:
   Region1:
     left_flank: "Flank1"
