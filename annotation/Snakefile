@@ -1,3 +1,19 @@
+import pandas as pd
+from glob import glob
+import itertools
+
+configfile:"configs/annno_run-config.yaml"
+REGIONS = config['region']
+SPECIES=config['species'].replace(" ", "_")
+
+GENOMES, = glob_wildcards("inputs/{genome}.fa")
+
+rule all:
+    input:
+        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt", species = SPECIES, region = REGIONS, genome = GENOMES),
+        expand("regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv", species = SPECIES, region =['LILR_M','KIR'], genome = GENOMES),
+
+
 
 ## Flanking genes detection
 rule download_flanking_genes:
@@ -11,7 +27,7 @@ rule download_flanking_genes:
         info = "flanking_genes/{species}/info_{region}.txt"
     retries: 3
     conda:
-        "../envs/flanking.yaml"
+        "envs/flanking.yaml"
     shell:
         """
         left_flank={params.left}
@@ -42,14 +58,15 @@ rule download_flanking_genes:
 
 rule locate_flanking_genes:
     input:
-        fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa",
+        fa = "inputs/{genome}.fa",
         flanks = "flanking_genes/{species}/{region}.fasta"
     output:
-        sam = "map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.sam",
-        flank_region = "map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.txt"
+#        sam = temp("map_temp/{species}/{region}/{genome}_{region}.sam"),
+        sam = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.sam",
+        flank_region = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.txt"
     threads: 6
     conda:
-        "../envs/minimap2.yaml"
+        "envs/minimap2.yaml"
     shell:
         """
         #minimap2 -ax splice -t {threads} {input.fa} {input.flanks} > {output.sam}
@@ -61,11 +78,11 @@ rule locate_flanking_genes:
 
 checkpoint check_flanking_genes:
     input:
-        loc = "map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.txt",
+        loc = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.txt",
         info = "flanking_genes/{species}/info_{region}.txt"
     output:
-        status = "regions/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_status.csv",
-        tmp = temp("regions/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_status.tmp"),
+        status = "regions/{species}/{genome}/{region}/{genome}_{region}_status.csv",
+        tmp = temp("regions/{species}/{genome}/{region}/{genome}_{region}_status.tmp"),
     shell:
         """
         # Extract left and right flanking genes
@@ -130,12 +147,12 @@ checkpoint check_flanking_genes:
 ## Processing complete fragments
 rule region_sam_to_sort_bam:
     input:
-        sam = "map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.sam",
+        sam = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.sam",
     output:
-        bam = temp("map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.bam"),
-        sort = temp("map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes_sort.bam"),
+        bam = temp("map_temp/{species}/{region}/{genome}_{region}_flank_genes.bam"),
+        sort = temp("map_temp/{species}/{region}/{genome}_{region}_flank_genes_sort.bam"),
     conda:
-        "../envs/samtools.yaml"
+        "envs/samtools.yaml"
     shell:
         """
         samtools view -@ {threads} -bh {input.sam} > {output.bam}
@@ -144,15 +161,15 @@ rule region_sam_to_sort_bam:
 
 rule region_intact_bed:
     input:
-        sam = "map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.sam",
-        bam = "map_temp/{species}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes_sort.bam",
-        status = "regions/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_status.csv",
+        sam = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.sam",
+        bam = "map_temp/{species}/{region}/{genome}_{region}_flank_genes_sort.bam",
+        status = "regions/{species}/{genome}/{region}/{genome}_{region}_status.csv",
     output:
-        bed = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_flanking_genes.bed",
-        bed_mod = temp("regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_coords.tmp"),
-        bed_final = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_region_coords.bed",
+        bed = "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_genes.bed",
+        bed_mod = temp("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_coords.tmp"),
+        bed_final = "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_region_coords.bed",
     conda:
-        "../envs/bedtools.yaml"
+        "envs/bedtools.yaml"
     shell:
         """
         # Convert to bed coords
@@ -195,17 +212,30 @@ rule region_intact_bed:
         awk '!s[$2,$3]++' {output.bed_mod} > {output.bed_final}
         """
 
+rule region_intact_contig:
+    input:
+        bed = "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_region_coords.bed",
+        fa = "inputs/{genome}.fa",
+    output:
+        fa = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.fa",
+    conda:
+        "envs/bedtools.yaml"
+    shell:
+        """
+        bedtools getfasta -fi {input.fa} -bed {input.bed} -s | sed 's/:.*/_{wildcards.region}/g' > {output.fa}
+        """
+
 rule region_intact_minimap2:
     input:
-        fa = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_intact.fa",
+        fa = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.fa",
         lib = lambda wildcards: REGIONS[wildcards.region]['library'],
     output:
-        "map_temp/{species}/{region}/library/{sample}_{hap}_{ref}_{region}_intact.paf",
+        "map_temp/{species}/{region}/library/{genome}_{region}_intact.paf",
     params:
         minimap2 = lambda wildcards: REGIONS[wildcards.region]['minimap2'],
     threads: 6
     conda:
-        "../envs/minimap2.yaml"
+        "envs/minimap2.yaml"
     shell:
         """
         # mapping lib to region
@@ -214,37 +244,23 @@ rule region_intact_minimap2:
 
 rule region_intact_cigar_info:
     input:
-        "map_temp/{species}/{region}/library/{sample}_{hap}_{ref}_{region}_intact.paf",
+        "map_temp/{species}/{region}/library/{genome}_{region}_intact.paf",
     output:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_gene_coords_paf.txt"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt"
     shell:
         """
-        python scripts/cigar_digest2.py {input} {output}
-        """
-
-rule region_intact_contig:
-    input:
-        bed = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_region_coords.bed",
-        fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa",
-    output:
-        fa = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_intact.fa",
-    conda:
-        "../envs/bedtools.yaml"
-    shell:
-        """
-        bedtools getfasta -fi {input.fa} -bed {input.bed} -s | sed 's/:.*/_{wildcards.region}/g' > {output.fa}
+        python ../scripts/cigar_digest2.py {input} {output}
         """
 
 rule region_intact_gene_blast:
     input:
-        coords = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_gene_coords_paf.txt",
-        fa = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_intact.fa",
+        coords = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt",
+        fa = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.fa",
         lib = lambda wildcards: REGIONS[wildcards.region]['library']
     output:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_gene_coords_paf.blast",
-    threads: 10
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
     conda:
-        "../envs/bbstools.yaml"
+        "envs/bbstools.yaml"
     params:
         blast = lambda wildcards: REGIONS[wildcards.region]['blast'],
     shell:
@@ -253,107 +269,102 @@ rule region_intact_gene_blast:
         awk '!s[$1]++ {{print $1}}' |
         for i in `cat`; do
             name=$(echo $i | sed 's/|.*//g')
-            awk -v var="$i" '$1==var' {input.coords} | awk '{{print $2,$5,$6}}' | sed 's/ /\t/g' > regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name".bed"
-            bedtools getfasta -fi {input.fa} -bed regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name".bed" > regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_region.fa" 
-            seqkit grep -p "$i" {input.lib} > regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_lib.fasta"
-            makeblastdb -in regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_lib.fasta" -dbtype nucl -logfile regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_lib.log"
-            blastn -query regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_region.fa" -db regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_lib.fasta" {params.blast} -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen" >> {output}
-            rm regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name".bed"  regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_region.fa"  regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_lib.fasta"*  regions/{wildcards.species}/{wildcards.sample}/{wildcards.region}/annotation/{wildcards.hap}/$name"_lib.log"
+            awk -v var="$i" '$1==var' {input.coords} | awk '{{print $2,$5,$6}}' | sed 's/ /\t/g' > regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed"
+            bedtools getfasta -fi {input.fa} -bed regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed" > regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa" 
+            seqkit grep -p "$i" {input.lib} > regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta"
+            makeblastdb -in regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta" -dbtype nucl -logfile regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.log"
+            blastn -query regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa" -db regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta" {params.blast} -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen" >> {output}
+            rm regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed"  regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa"  regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta"*  regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.log"
         done
         """
 
+
 rule region_intact_join_blast_paf:
     input:
-        info = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_gene_coords_paf.txt",
-        blast = "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_gene_coords_paf.blast",
+        info = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt",
+        blast = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
     output:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_analysis_paf.txt"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_analysis_paf.txt"
     shell:
         """
-        python scripts/blast_extraction.py {input.info} {input.blast} -o {output}
+        python ../scripts/blast_extraction.py {input.info} {input.blast} -o {output}
         """
 
 rule region_intact_process_blast_paf:
     input:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_analysis_paf.txt"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_analysis_paf.txt"
     output:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_query_groups.csv"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv"
     params:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_query_groups"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups"
     shell:
         """
-        python scripts/analyse_paf2.py {input} {params}
+        python ../scripts/analyse_paf2.py {input} {params}
         """
 
 rule region_intact_filter_queries:
     input:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_query_groups.csv"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv"
     output:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_query_groups_filtered.csv"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.xlsx"
     params:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_query_groups_filtered"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered"
     shell:
         """
-        python scripts/filter_query_ident.py {input} {params}
+        python ../scripts/filter_query.py {input} {params}
         """
 
 
-rule region_intact_figure:
+rule region_intact_lilr_figure:
     input:
-        "regions/{species}/{sample}/{region}/annotation/{hap}/{sample}_{hap}_{ref}_{region}_query_groups_filtered.csv"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.xlsx"
     conda:
-        "../envs/dna_viewer.yaml"
+        "envs/dna_viewer.yaml"
     output:
-        "figures/{species}_{sample}_{hap}_{ref}_{region}.png"
+        "figure/annotation_flow_{species}_{genome}_{region}.png"
     shell:
         """
-        python scripts/DNA_viewer2_csv.py {input} {wildcards.species}_{wildcards.sample}_{wildcards.hap}_{wildcards.ref}_{wildcards.region}
+        python ../scripts/DNA_viewer_csv.py {input} {wildcards.species}_{wildcards.genome}_{wildcards.region}
         """
-
-
-
-
 
 
 rule closed_flanks:
     input:
-        "figure/annotation_flow_{species}_{sample}_{hap}_{ref}_{region}.png"
+#        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_analysis_paf.txt"
     output:
-        touch("regions/{species}/{sample}/{region}/closed/{sample}_{hap}_{ref}_{region}.done")
-    shell:
-        """
-        echo "The intact {wildcards.region} region was analysed for sample {wildcards.sample} {wildcards.hap}"
-        """
+        touch("regions/{species}/{genome}/{region}/closed/{genome}_{region}_coords.txt")
 
-rule fragment_region:
+rule fragmented_flanks:
+    input:
+        "regions/{species}/{genome}/{region}/{genome}_{region}_status.csv"
     output:
-        touch("regions/{species}/{sample}/{region}/fragmented/{sample}_{hap}_{ref}_{region}.done")
-    shell:
-        """
-        echo "The region {wildcards.region} of sample {wildcards.sample} {wildcards.hap} was fragmented."
-        """
+        touch("regions/{species}/{genome}/{region}/fragmented/{genome}_{region}_coords.txt")
 
-rule missing_region:
+rule missing_flanks:
     output:
-        touch("regions/{species}/{sample}/{region}/missing/{sample}_{hap}_{ref}_{region}.done")
+        touch("regions/{species}/{genome}/{region}/missing/{genome}_{region}_coords.txt")
 
 def check_gaps(wildcards):
     with checkpoints.check_flanking_genes.get(**wildcards).output[0].open() as f:
         for line in f:
             col1, col2, col3, col4 = line.strip().split("\t")
             if col2 == "closed":
-                return "regions/{species}/{sample}/{region}/closed/{sample}_{hap}_{ref}_{region}.done"
+                return "regions/{species}/{genome}/{region}/closed/{genome}_{region}_coords.txt"
             elif col2 == "fragmented":
-                return "regions/{species}/{sample}/{region}/fragmented/{sample}_{hap}_{ref}_{region}.done"
+                return "regions/{species}/{genome}/{region}/fragmented/{genome}_{region}_coords.txt"
             else:
-                return "regions/{species}/{sample}/{region}/missing/{sample}_{hap}_{ref}_{region}.done"
+                return "regions/{species}/{genome}/{region}/missing/{genome}_{region}_coords.txt"
 
 
-rule check_region_annotation:
+rule check_region:
     input:
         check_gaps
     output:
-        "regions/{species}/{sample}/{region}/flanking/{sample}_{hap}_{ref}_{region}_annotation.finish"
+        "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt"
     shell:
         "cat {input} > {output}"
+
+
+
 
