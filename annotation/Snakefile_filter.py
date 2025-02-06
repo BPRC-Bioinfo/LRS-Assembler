@@ -313,7 +313,7 @@ rule region_intact_filter_queries:
     input:
         "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv"
     output:
-        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.xlsx"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.csv"
     params:
         "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered"
     shell:
@@ -324,8 +324,8 @@ rule region_intact_filter_queries:
 
 rule region_intact_figure:
     input:
-#        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.xlsx"
-        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv",
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.csv"
+#        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv",
     conda:
         "../envs/dna_viewer.yaml"
     output:
