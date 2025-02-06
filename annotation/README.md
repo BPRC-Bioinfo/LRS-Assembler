@@ -12,6 +12,8 @@ cd LRS-Assembler/annotation
 
 ## Modify the config:
 
+A template of the config file is in configs/anno_run-config.yaml
+
 ```
 species: "scientific species name"
 region:
@@ -30,12 +32,17 @@ region:
 ```
 
 Type in the scientific species name.
-Underneath regions you can fill in the region names.
-Fill in the flanking genes.
+
+### Regions of interest
+
+Name for your region of interest underneath `regions:`
+
+
+Fill in the left and right flanking genes.
 If only one flanking gene is filled, the program will process the region from the flanking gene to the end of the sequence.
 
 ### Library
-Add path of the reference file
+
 The program needs the length of the fasta sequence so that it can do additional calculation.
 This is what it should look like
 
@@ -56,6 +63,8 @@ python ../scripts/lib_format.py input_ibrary.fa output_library.fa
 # Check if it works
 grep ">" output_library.fa
 ```
+
+Add path of the reference library to the config file. 
 
 ## Preparing analysis sequences
 
