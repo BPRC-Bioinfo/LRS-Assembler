@@ -83,7 +83,7 @@ def group_by_ref_name(file_path):
             # Update current_ref_start for the next iteration
             current_ref_start = ref_start_coord
     
-    print(dict_data)
+#    print(dict_data)
 
     result_data = []
 

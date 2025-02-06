@@ -1,7 +1,7 @@
 import os
 import glob
 
-configfile: "configs/macaque.yaml"
+configfile: "configs/run-config.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
 REGIONS = config['region']

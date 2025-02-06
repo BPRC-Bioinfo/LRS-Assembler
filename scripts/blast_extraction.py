@@ -43,7 +43,7 @@ def process_data(info_df, blast_df):
   column_names = [i for i in range(12, 23) if i not in (19, 20)]  # Columns 12 to 23
   result_df[column_names] = result_df[column_names].fillna(-1).astype(int, errors = "ignore")
   result_df.replace(to_replace=-1, value = None, inplace = True)
-  print (result_df)
+#  print (result_df)
   
   return result_df
 

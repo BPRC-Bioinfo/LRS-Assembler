@@ -2,7 +2,7 @@ import pandas as pd
 from glob import glob
 import itertools
 
-configfile:"configs/annno_run-config.yaml"
+configfile:"configs/macaque.yaml"
 REGIONS = config['region']
 SPECIES=config['species'].replace(" ", "_")
 
@@ -10,7 +10,7 @@ GENOMES, = glob_wildcards("inputs/{genome}.fa")
 
 rule all:
     input:
-        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt", species = SPECIES, region = REGIONS, genome = GENOMES),
+        expand("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_annotation.done", species = SPECIES, region = REGIONS, genome = GENOMES),
 
 
 
@@ -26,17 +26,17 @@ rule download_flanking_genes:
         info = "flanking_genes/{species}/info_{region}.txt"
     retries: 3
     conda:
-        "envs/flanking.yaml"
+        "../envs/flanking.yaml"
     shell:
         """
         left_flank={params.left}
         touch {output.info}
 
         if [[ ! -z $left_flank ]]; then
-            datasets download gene symbol {params.left} --taxon "{params.ref}" --include gene --filename {params.left}.zip
-            unzip {params.left}.zip -d {params.left}
+            datasets download gene symbol {params.left} --taxon "{params.ref}" --include gene --filename {wildcards.region}_{params.left}.zip  || (echo "Warning: Download left flanking failed. Check gene name.")
+            unzip {wildcards.region}_{params.left}.zip -d {params.left}
             cat {params.left}/ncbi_dataset/data/gene.fna >> {output.temp}
-            rm -r {params.left} {params.left}.zip
+            rm -r {params.left} {wildcards.region}_{params.left}.zip
             echo "left:" {params.left} >> {output.info}
             sleep 3
         fi
@@ -44,15 +44,16 @@ rule download_flanking_genes:
         right_flank={params.right}
         # Right flanking gene
         if [[ ! -z $right_flank ]]; then
-            datasets download gene symbol {params.right} --taxon "{params.ref}" --include gene --filename {params.right}.zip
-            unzip {params.right}.zip -d {params.right}
+            datasets download gene symbol {params.right} --taxon "{params.ref}" --include gene --filename {wildcards.region}_{params.right}.zip || (echo "Warning: Download right flanking failed. Check gene name.")
+            unzip {wildcards.region}_{params.right}.zip -d {params.right}
             cat {params.right}/ncbi_dataset/data/gene.fna >> {output.temp}
-            rm -r {params.right}/ {params.right}.zip
+            rm -r {params.right}/ {wildcards.region}_{params.right}.zip
             echo "right:" {params.right} >> {output.info}
             sleep 2
         fi
         
         sed -E "s/ \\[.*//g;s/ /_/g" {output.temp} > {output.final}
+        echo "Complete download flanking genes."
         """
 
 rule locate_flanking_genes:
@@ -65,7 +66,7 @@ rule locate_flanking_genes:
         flank_region = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.txt"
     threads: 6
     conda:
-        "envs/minimap2.yaml"
+        "../envs/minimap2.yaml"
     shell:
         """
         #minimap2 -ax splice -t {threads} {input.fa} {input.flanks} > {output.sam}
@@ -73,6 +74,7 @@ rule locate_flanking_genes:
         # Filter low quality mapping flanking genes?
         # cut -f1-5 {output.sam} | grep -v "@" | awk -F'\t' '$5 > 0' > {output.flank_region}
         cut -f1-5 {output.sam} | grep -v "@" | awk '$3!="*"' > {output.flank_region}
+        echo "Mapped flanking genes to {wildcards.genome}."
         """
 
 checkpoint check_flanking_genes:
@@ -140,7 +142,7 @@ checkpoint check_flanking_genes:
             fi
         fi
         awk '!s[$0]++' {output.tmp} > {output.status}
-
+        echo "Check flanking genes in the inputs {wildcards.genome}"
         """
 
 ## Processing complete fragments
@@ -151,7 +153,7 @@ rule region_sam_to_sort_bam:
         bam = temp("map_temp/{species}/{region}/{genome}_{region}_flank_genes.bam"),
         sort = temp("map_temp/{species}/{region}/{genome}_{region}_flank_genes_sort.bam"),
     conda:
-        "envs/samtools.yaml"
+        "../envs/samtools.yaml"
     shell:
         """
         samtools view -@ {threads} -bh {input.sam} > {output.bam}
@@ -168,7 +170,7 @@ rule region_intact_bed:
         bed_mod = temp("regions/{species}/{genome}/{region}/flanking/{genome}_{region}_coords.tmp"),
         bed_final = "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_region_coords.bed",
     conda:
-        "envs/bedtools.yaml"
+        "../envs/bedtools.yaml"
     shell:
         """
         # Convert to bed coords
@@ -209,6 +211,7 @@ rule region_intact_bed:
             fi 
         done
         awk '!s[$2,$3]++' {output.bed_mod} > {output.bed_final}
+        echo "Prepare bed files for {wildcards.genome}"
         """
 
 rule region_intact_contig:
@@ -218,7 +221,7 @@ rule region_intact_contig:
     output:
         fa = "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.fa",
     conda:
-        "envs/bedtools.yaml"
+        "../envs/bedtools.yaml"
     shell:
         """
         bedtools getfasta -fi {input.fa} -bed {input.bed} -s | sed 's/:.*/_{wildcards.region}/g' > {output.fa}
@@ -234,11 +237,12 @@ rule region_intact_minimap2:
         minimap2 = lambda wildcards: REGIONS[wildcards.region]['minimap2'],
     threads: 6
     conda:
-        "envs/minimap2.yaml"
+        "../envs/minimap2.yaml"
     shell:
         """
         # mapping lib to region
         minimap2 {params} -t {threads} {input.fa} {input.lib} > {output}
+        echo "Mapped {wildcards.region} library to the {wildcards.genome} genome."
         """
 
 rule region_intact_cigar_info:
@@ -249,6 +253,7 @@ rule region_intact_cigar_info:
     shell:
         """
         python ../scripts/cigar_digest2.py {input} {output}
+        echo "Extract {wildcards.region} regions from paf file for {wildcards.genome}."
         """
 
 rule region_intact_gene_blast:
@@ -259,7 +264,7 @@ rule region_intact_gene_blast:
     output:
         "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
     conda:
-        "envs/bbstools.yaml"
+        "../envs/bbstools.yaml"
     params:
         blast = lambda wildcards: REGIONS[wildcards.region]['blast'],
     shell:
@@ -275,6 +280,7 @@ rule region_intact_gene_blast:
             blastn -query regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa" -db regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta" {params.blast} -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen" >> {output}
             rm regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed"  regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa"  regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta"*  regions/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.log"
         done
+        echo "Blast reference to the genes from the intact region on {wildcards.genome}."
         """
 
 
@@ -287,6 +293,7 @@ rule region_intact_join_blast_paf:
     shell:
         """
         python ../scripts/blast_extraction.py {input.info} {input.blast} -o {output}
+        echo "Join blast result to paf for {wildcards.region} on {wildcards.genome}."
         """
 
 rule region_intact_process_blast_paf:
@@ -299,6 +306,7 @@ rule region_intact_process_blast_paf:
     shell:
         """
         python ../scripts/analyse_paf2.py {input} {params}
+        echo "Process puf file for {wildcards.region} region on {wildcards.genome}"
         """
 
 rule region_intact_filter_queries:
@@ -314,23 +322,25 @@ rule region_intact_filter_queries:
         """
 
 
-rule region_intact_lilr_figure:
+rule region_intact_figure:
     input:
-        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.xlsx"
+#        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.xlsx"
+        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv",
     conda:
-        "envs/dna_viewer.yaml"
+        "../envs/dna_viewer.yaml"
     output:
-        "figure/annotation_flow_{species}_{genome}_{region}.png"
+        "figures/{species}_{genome}_{region}.png"
     shell:
         """
-        python ../scripts/DNA_viewer_csv.py {input} {wildcards.species}_{wildcards.genome}_{wildcards.region}
+        python ../scripts/DNA_viewer2_csv.py {input} {wildcards.species}_{wildcards.genome}_{wildcards.region}
+        echo "Generated figure for {wildcards.region} region on {wildcards.genome}."
         """
 
 
 rule closed_flanks:
     input:
 #        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt"
-        "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_analysis_paf.txt"
+        "figures/{species}_{genome}_{region}.png"
     output:
         touch("regions/{species}/{genome}/{region}/closed/{genome}_{region}_coords.txt")
 
@@ -360,7 +370,7 @@ rule check_region:
     input:
         check_gaps
     output:
-        "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_gene_coords.txt"
+        "regions/{species}/{genome}/{region}/flanking/{genome}_{region}_annotation.done"
     shell:
         "cat {input} > {output}"
 
