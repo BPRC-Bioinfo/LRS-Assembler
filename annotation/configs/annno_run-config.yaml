@@ -1,0 +1,14 @@
+species: "scientific species name"
+region:
+  Region1:
+    left_flank: "flanking gene"
+    right_flank: "flanking gene"
+    library: "/path/to/references.fasta" 
+    minimap2: "-cx splice:hq -G16k"
+    blast: "-word_size 7"
+  Region2:
+    left_flank: "flanking gene"
+    right_flank: ""
+    library: "/path/to/references2.fasta"
+    minimap2: "-cx splice:hq -G16k"
+    blast: "-word_size 7"

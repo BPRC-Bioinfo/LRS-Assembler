@@ -1,7 +1,7 @@
 import os
 import glob
 
-configfile: "configs/run-config.yaml"
+configfile: "configs/macaque.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
 REGIONS = config['region']
@@ -11,13 +11,12 @@ PSAMPLES = list(config["pacbio"].keys())
 
 SAMPLES = list(set(NSAMPLES) & set(PSAMPLES))
 
-print ("Working samples")
-print (SAMPLES)
+print ("LRS-Assembler")
+print (f"Samples detected {SAMPLES}")
 
 REFERENCE = list(set(config["reference"].keys()))
 
-print ("reference using")
-print (REFERENCE)
+print (f"Reference detected {REFERENCE}")
 
 wildcard_constraints:
     sample="|".join(SAMPLES),
@@ -27,11 +26,39 @@ wildcard_constraints:
 KVALS = [24,32,40]
 WVALS = [100, 250, 500]
 
+for sample, nano_dir in config['nanopore'].items():
+    print (f"For {sample} nanopore:")
+    for input_dir in nano_dir:
+        fastq_gz_files = glob.glob(os.path.join(input_dir, "*.fastq.gz"))
+        num_files = len(fastq_gz_files)
+
+        if num_files > 0:
+            print(f"Found {num_files} fastq.gz files in {input_dir}.")
+        else:
+            print(f"Warning: No fastq.gz files found at {input_dir}.")
+            sys.exit(1)
+
+for sample, pac_dir in config['pacbio'].items():
+    print (f"For {sample} pacbio:")   
+    for input_dir in pac_dir:
+        bam_files = glob.glob(os.path.join(input_dir, "*.bam"))
+        pbi_files = glob.glob(os.path.join(input_dir, "*.bam.pbi"))
+        num_bam_files = len(bam_files)
+        num_pbi_files = len(pbi_files)
+
+        if num_bam_files > 0 and num_pbi_files > 0:
+            print(f"Found {num_bam_files} BAM file(s) and {num_pbi_files} PBI file(s) in {input_dir}.")
+        elif num_bam_files > 0:
+            print(f"Found {num_bam_files} BAM file(s), but no PBI files in {input_dir}. ")
+        elif num_pbi_files > 0:
+            print(f"Found {num_pbi_files} PBI file(s), but no BAM files in {input_dir}.")
+        else:
+            print(f"Warning: No BAM or PBI files found at {input_dir}.")
+            sys.exit(1)
 
 rule all:
     input:
         expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
-#        expand("results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",sample = SAMPLES, ref = REFERENCE, species = SPECIES ),
 
 
 rule combine_filter_nanopore_fastq:
@@ -240,7 +267,8 @@ rule ntlink_final:
 
 rule prepare_genome_reference:
     output:
-        "reference/{ref}.fna",
+        genome = "reference/{ref}.fna",
+        zipfile = temp("{ref}_genome.zip"),
     conda:
         "../envs/datasets.yaml"
     retries: 3
@@ -251,10 +279,9 @@ rule prepare_genome_reference:
         """
         if [ ! -f {params.genome} ]; then
             echo "Genome file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {wildcards.ref}"_genome.zip" --include genome
-            unzip {wildcards.ref}"_genome.zip" -d "reference"
-            mv reference/ncbi_dataset/data/{params.ref}/{params.ref}*.fna {output}
-            rm {wildcards.ref}"_genome.zip"
+            datasets download genome accession {params.ref} --filename {output.zip} --include genome || (echo "Warning: download genome failed. Check accession or prepare the genome locally.")
+            unzip {output.zip} -d "reference"
+            mv reference/ncbi_dataset/data/{params.ref}/{params.ref}*.fna {output.genome}
         else
             echo "Using local genome file {params.genome}"
             cp {params.genome} {output}
@@ -267,7 +294,8 @@ rule prepare_genome_reference:
 
 rule prepare_gff_reference:
     output:
-        "reference/{ref}.gff",
+        gff = "reference/{ref}.gff",
+        zipfile = temp("{ref}_gff.zip"),
     conda:
         "../envs/datasets.yaml"
     retries: 3
@@ -278,10 +306,9 @@ rule prepare_gff_reference:
         """
         if [ ! -f {params.gff} ]; then
             echo "Gff file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {wildcards.ref}"_gff.zip" --include gff3
-            unzip {wildcards.ref}"_gff.zip" -d "reference"
-            mv reference/ncbi_dataset/data/{params.ref}/genomic.gff {output}
-            rm {wildcards.ref}"_gff.zip"
+            datasets download genome accession {params.ref} --filename {output.zipfile} --include gff3 || (echo "Warning: download gff failed. Check accession or prepare locally.")
+            unzip {output.zip} -d "reference"
+            mv reference/ncbi_dataset/data/{params.ref}/genomic.gff {output.gff}
         else
             echo "Using local genome file {params.gff}"
             cp {params.gff} {output}
@@ -294,7 +321,8 @@ rule prepare_gff_reference:
 
 rule prepare_chromosome_reference:
     output:
-        "reference/{ref}.info",
+        info = "reference/{ref}.info",
+        zipfile = temp("{ref}_info.zip"),
     retries: 3
     conda:
         "../envs/datasets.yaml"
@@ -305,10 +333,9 @@ rule prepare_chromosome_reference:
         """
         if [ ! -f {params.info} ]; then
             echo "Info file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {wildcards.ref}"_info.zip" --include seq-report
-            unzip {wildcards.ref}"_info.zip" -d "reference"
-            python scripts/json_parse.py reference/ncbi_dataset/data/{params.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output}
-            rm {wildcards.ref}"_info.zip"
+            datasets download genome accession {params.ref} --filename {output.zip} --include seq-report || (echo "Warning: download info failed. Check accession or prepare locally.")
+            unzip {output.zip} -d "reference"
+            python scripts/json_parse.py reference/ncbi_dataset/data/{params.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output.info}
         else
             echo "Using local genome file {params.info}"
             cp {params.info} {output}
@@ -319,7 +346,7 @@ rule prepare_chromosome_reference:
         echo "Complete prepare_chromosome_reference"
         """
 
-rule ragTag:
+rule primary_genome_ragTag:
     input:
         ref = ancient("reference/{ref}.fna"),
         fa = "results/{sample}/scaffolds/ntlink/{sample}_hybridPN_denovo_ntlink.fasta"
@@ -343,7 +370,7 @@ rule ragTag:
         echo "Scaffold complete for sample {wildcards.sample} using {wildcards.ref}"
         """
 
-rule ragtag_haplo:
+rule haplo_genome_ragtag:
     input:
         ref = "reference/{ref}.fna",
         fa = ancient("results/{sample}/intermediates/{sample}_hybridPN_denovo_{hap}.fa"),
@@ -368,7 +395,7 @@ rule ragtag_haplo:
 
 rule accession_chromosome:
     input:
-        "reference/{ref}.info"
+        ancient("reference/{ref}.info"),
     output:
         "results/{sample}/scaffolds/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt"
     shell:
@@ -450,10 +477,10 @@ rule scaffold_busco:
         echo "Complete BUSCO analysis of sample {wildcards.sample} scaffolds"
         """
 
-rule liftOff:
+rule primary_genome_liftOff:
     input:
-        genome = "reference/{ref}.fna",
-        gff = "reference/{ref}.gff",
+        genome = ancient("reference/{ref}.fna"),
+        gff = ancient("reference/{ref}.gff"),
         fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa",
         chrInfo = "results/{sample}/scaffolds/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt"
     output:
@@ -477,7 +504,7 @@ rule liftOff:
         fi
         """
 
-rule gff_correct:
+rule primray_genome_gff_correct:
     input:
         "results/{sample}/scaffolds/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}.gff",
     output:
@@ -545,7 +572,7 @@ rule full_report:
         echo "Final report generated"
         """
 
-include:"../annotation/annotation.py"
+include:"../annotation/annotation_pipe.py"
 
 rule running_annotation:
     input:
@@ -558,13 +585,6 @@ rule running_annotation:
         cat {input} > {output}
         """
 
-rule main_task_test:
-    input:
-        "checking_{species}_{region}_{sample}_{hap}_{ref}.txt"
-    output:
-        touch("checked_{species}_{region}_{sample}_{hap}_{ref}.csv")
-
-
 onsuccess:
     shell("""
         if [ -d "reference/ncbi_dataset/" ]; then
@@ -572,5 +592,8 @@ onsuccess:
         fi
         if [ -f "reference/md5sum.txt" ]; then
             rm reference/md5sum.txt
+        fi
+        if [ -f "reference/README.md" ]; then
+            rm reference/README.md
         fi
     """)
