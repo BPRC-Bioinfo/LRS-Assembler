@@ -12,7 +12,6 @@ git clone git@github.com:BPRC-Bioinfo/LRS-Assembler.git
 And then navigate to the stand-alone annotation tool:
 ```
 cd LRS-Assembler/annotation
-
 ```
 
 ## Usage Guide
@@ -38,7 +37,7 @@ region:
 
 ### Regions of Interest
 
-Specify your region of interest under ```region:```.
+Specify the name of your region of interest under ```region:```.
 
 Provide the left and right flanking genes.
 If only one flanking gene is specified, the program will process the region from that gene to the end of the sequence.
@@ -59,7 +58,7 @@ conda env create -f ../envs/rename.yaml
 # Activate environment
 conda activate lib_prepare
 
-# Rename the fasta file
+# Rename the sequences in the library to the required format
 python ../scripts/lib_format.py input_ibrary.fa output_library.fa
 
 # Validate the renamed library
