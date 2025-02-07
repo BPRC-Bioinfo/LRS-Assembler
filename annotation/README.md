@@ -1,21 +1,26 @@
-# Instruction
+# LRS-Assembler - Annotation 
 
-Download the git repo.
+The annotation tool can be run independently of the assembly pipeline. This process requires an assembled genome or haplotype sequence, which will first be scanned for the presence of flanking genes. Once identified, the annotation process begins using the user-provided reference library.
+
+## Installation Guide
+
+To download the annotation tool, the repository can be cloned using the following command:
 
 ```
 git clone git@github.com:BPRC-Bioinfo/LRS-Assembler.git
-
-## Go to the standalone annotation directory
+```
+And then navigate to the stand-alone annotation tool:
+```
 cd LRS-Assembler/annotation
 
 ```
 
-## Modify the config:
+## Usage Guide
 
-A template of the config file is in configs/anno_run-config.yaml
+Like the assembly pipeline, the annotation tool also requires a configuration file. A template for this file is available: ```configs/anno_run-config.yaml```
 
 ```
-species: "scientific species name"
+species: "scientific name species"
 region:
   Region1:
     left_flank: "flanking gene"
@@ -25,33 +30,30 @@ region:
     blast: "-word_size 7"
   Region2:
     left_flank: "flanking gene"
-    right_flank: ""
+    right_flank: "flanking gene"
     library: "/path/to/references2.fasta"
     minimap2: "-cx splice:hq -G16k"
     blast: "-word_size 7"
 ```
 
-Type in the scientific species name.
+### Regions of Interest
 
-### Regions of interest
+Specify your region of interest under ```region:```.
 
-Name for your region of interest underneath `regions:`
-
-
-Fill in the left and right flanking genes.
-If only one flanking gene is filled, the program will process the region from the flanking gene to the end of the sequence.
+Provide the left and right flanking genes.
+If only one flanking gene is specified, the program will process the region from that gene to the end of the sequence.
 
 ### Library
 
-The program needs the length of the fasta sequence so that it can do additional calculation.
-This is what it should look like
+The library file requires a specific format to annotate the RIO, which includes the gene name and the length of the sequence.
+The expected format:
 
 ```
 >Gene|length
 ```
 
 ```
-# create environment for renaming
+# create environment for renaming your library
 conda env create -f ../envs/rename.yaml
 
 # Activate environment
@@ -60,18 +62,17 @@ conda activate lib_prepare
 # Rename the fasta file
 python ../scripts/lib_format.py input_ibrary.fa output_library.fa
 
-# Check if it works
+# Validate the renamed library
 grep ">" output_library.fa
 ```
 
-Add path of the reference library to the config file. 
+Specify the path to the reference library in the configuration file.
 
-## Preparing analysis sequences
+## Prepare Input Files
 
-Create a directory called `inputs`
-Plase your `fasta_sequence.fa` files in the directory `inputs`
+Create a directory named ```inputs``` and place your assembly or sequence files inside it.
 
-## Running the annalysis
+## Run the Annotation Tool
 
 ```
 conda activate snakemake
