@@ -323,7 +323,7 @@ rule region_intact_figure:
 
 rule closed_flanks:
     input:
-        "figure/annotation_flow_{species}_{sample}_{hap}_{ref}_{region}.png"
+        "figure/{species}_{sample}_{hap}_{ref}_{region}.png"
     output:
         touch("regions/{species}/{sample}/{region}/closed/{sample}_{hap}_{ref}_{region}.done")
     shell:
