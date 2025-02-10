@@ -4,7 +4,7 @@ import glob
 configfile: "configs/run-config.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
-REGIONS = config['region']
+REGIONS = config.get('region', 'no_region')
 
 NSAMPLES = list(config["nanopore"].keys())
 PSAMPLES = list(config["pacbio"].keys())
@@ -307,7 +307,7 @@ rule prepare_gff_reference:
         if [ ! -f {params.gff} ]; then
             echo "Gff file not found locally, downloading from NCBI"
             datasets download genome accession {params.ref} --filename {output.zipfile} --include gff3 || (echo "Warning: download gff failed. Check accession or prepare locally.")
-            unzip {output.zip} -d "reference"
+            unzip {output.zipfile} -d "reference"
             mv reference/ncbi_dataset/data/{params.ref}/genomic.gff {output.gff}
         else
             echo "Using local genome file {params.gff}"
