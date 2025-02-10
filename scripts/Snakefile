@@ -279,8 +279,8 @@ rule prepare_genome_reference:
         """
         if [ ! -f {params.genome} ]; then
             echo "Genome file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {output.zip} --include genome || (echo "Warning: download genome failed. Check accession or prepare the genome locally.")
-            unzip {output.zip} -d "reference"
+            datasets download genome accession {params.ref} --filename {output.zipfile} --include genome || (echo "Warning: download genome failed. Check accession or prepare the genome locally.")
+            unzip {output.zipfile} -d "reference"
             mv reference/ncbi_dataset/data/{params.ref}/{params.ref}*.fna {output.genome}
         else
             echo "Using local genome file {params.genome}"
@@ -333,8 +333,8 @@ rule prepare_chromosome_reference:
         """
         if [ ! -f {params.info} ]; then
             echo "Info file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {output.zip} --include seq-report || (echo "Warning: download info failed. Check accession or prepare locally.")
-            unzip {output.zip} -d "reference"
+            datasets download genome accession {params.ref} --filename {output.zipfile} --include seq-report || (echo "Warning: download info failed. Check accession or prepare locally.")
+            unzip {output.zipfile} -d "reference"
             python scripts/json_parse.py reference/ncbi_dataset/data/{params.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output.info}
         else
             echo "Using local genome file {params.info}"
