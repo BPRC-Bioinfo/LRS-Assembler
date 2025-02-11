@@ -2,7 +2,7 @@ name: lrs_pipe
 channels:
   - bioconda
   - conda-forge
-  - default
 dependencies:
   - snakemake
   - pandas
+  - openpyxl=3.1.5
