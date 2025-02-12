@@ -318,7 +318,7 @@ rule region_intact_filter_queries:
         "regions/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered"
     shell:
         """
-        python ../scripts/filter_query_ident.py {input} {params}
+        python ../scripts/filter_query_ident2.py {input} {params}
         """
 
 
