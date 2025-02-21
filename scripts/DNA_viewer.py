@@ -1,3 +1,7 @@
+# Annotation viewer
+# v0.4
+# By Giang & Jaimy
+
 import pandas as pd
 from dna_features_viewer import GraphicFeature, GraphicRecord
 import argparse
@@ -8,7 +12,9 @@ def plot(df, sample_name) -> None:
         GraphicFeature(
             start=row["chr_start"],
             end=row["chr_end"],
-            label=f"{row['Simple name']}"
+            label=f"{row['Simple name']} + {row['blast_percent']}",
+            strand=int(row["strand"] + "1"),
+
         )
         for _, row in df.iterrows()
     ]
@@ -22,8 +28,8 @@ def plot(df, sample_name) -> None:
     ax.set_title(f"Annotation report for {sample_name}", loc='left', weight='bold')
 
     # Save figures with the sample name included in the filenames
-    ax.figure.savefig(f'figures/{sample_name}.png', bbox_inches='tight', dpi=600)
-    ax.figure.savefig(f'figures/{sample_name}.svg', bbox_inches='tight', dpi=600)
+#    ax.figure.savefig(f'figures/{sample_name}.png', bbox_inches='tight', dpi=600)
+#    ax.figure.savefig(f'figures/{sample_name}.svg', bbox_inches='tight', dpi=600)
     ax.figure.savefig(f'figures/{sample_name}.pdf', bbox_inches='tight', dpi=600)
 
 
@@ -37,7 +43,7 @@ def main():
     df = pd.read_csv(args.input_file, sep = "\t")
 
     # Process the dataframe as before
-    df["Simple name"] = df["Group_name"].str.split("|").str[0]
+    df["Simple name"] = df["gene_group"].str.split("|").str[0]
 
     # Call the plot function with the sample name
     plot(df, args.sample_name)
