@@ -1,5 +1,5 @@
-# Annotation Pipeline
-# v0.0.2
+# Annotation Pipeline Standalone
+# v0.0.3
 # By Giang Le & Jaimy
 
 import pandas as pd
@@ -7,15 +7,23 @@ from glob import glob
 from pathlib import Path
 
 
-configfile:"configs/annno_run-config.yaml.yaml"
+configfile:"configs/macaque_v2.yaml"
 REGIONS = config['region']
 SPECIES=config['species'].replace(" ", "_")
 
-GENOMES, = glob_wildcards("inputs/{genome}.fa")
+fa_files, = glob_wildcards("inputs/{genome}.fa")
+fasta_files, = glob_wildcards("inputs/{genome}.fasta")
+
+GENOMES = fa_files + fasta_files
+
+print (f"Welcome to LRS-assembler standalone annotation.")
+
+print (f"Detected {len(GENOMES)} samples for analysis.")
 
 rule all:
     input:
-        expand("LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}_annotation.done", species = SPECIES, region = REGIONS, genome = GENOMES),
+        expand("LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}.annotated", species = SPECIES, region = REGIONS, genome = GENOMES),
+#        expand("map_temp/{species}/{region}/{genome}_{region}_flank_genes.sam", species = SPECIES, region = REGIONS, genome = GENOMES)
 
 
 
@@ -73,18 +81,24 @@ rule download_flanking_genes:
 
 rule locate_flanking_genes:
     input:
-        fa = "inputs/{genome}.fa",
-        flanks = ancient("flanking_genes/{species}/{region}.fasta"),
+        fa = lambda wildcards: (
+            "inputs/{genome}.fa".format(**wildcards)
+            if os.path.exists("inputs/{genome}.fa".format(**wildcards))
+            else "inputs/{genome}.fasta".format(**wildcards)
+        ),
+        flanks = "flanking_genes/{species}/{region}.fasta",
     output:
 #        sam = temp("map_temp/{species}/{region}/{genome}_{region}.sam"),
         sam = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.sam",
         flank_region = "map_temp/{species}/{region}/{genome}_{region}_flank_genes.txt"
+    log:
+        "map_temp/{species}/{region}/logs/{genome}_{region}_flanking.log"
     threads: 6
     conda:
         "../envs/minimap2.yaml"
     shell:
         """
-        minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam}
+        minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam} 2> {log}
         cut -f1-5 {output.sam} | grep -v "@" | awk '$3!="*"' > {output.flank_region}
         echo "Mapped {wildcards.region} flanking genes to {wildcards.genome}."
         """
@@ -228,7 +242,11 @@ rule region_intact_bed:
 rule region_intact_contig:
     input:
         bed = "LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}_region_coords.bed",
-        fa = "inputs/{genome}.fa",
+        fa = lambda wildcards: (
+            "inputs/{genome}.fa".format(**wildcards)
+            if os.path.exists("inputs/{genome}.fa".format(**wildcards))
+            else "inputs/{genome}.fasta".format(**wildcards)
+        ),
     output:
         fa = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.fa",
     conda:
@@ -248,7 +266,7 @@ rule library_format:
         "../envs/rename.yaml"
     shell:
         """
-        python ../scripts/lib_format.py {input} {output}
+        python ../scripts/lib_format.py {input} | seqkit rmdup -s | sed 's/\\r//g' > {output}
         """
 
 rule region_intact_minimap2:
@@ -259,13 +277,15 @@ rule region_intact_minimap2:
         "map_temp/{species}/{region}/analysis/{genome}_{region}_intact.paf",
     params:
         minimap2 = lambda wildcards: REGIONS[wildcards.region]['minimap2'],
+    log:
+        "map_temp/{species}/{region}/logs/{genome}_{region}_intact.log"
     threads: 6
     conda:
         "../envs/minimap2.yaml"
     shell:
         """
         # mapping lib to region
-        minimap2 {params} -c -t {threads} {input.fa} {input.lib} > {output}
+        minimap2 {params} -c -t {threads} {input.fa} {input.lib} > {output} 2> {log}
         echo "Mapped {input.lib} to the {wildcards.region} region of the sample {wildcards.genome}."
         """
 
@@ -281,29 +301,19 @@ rule region_intact_cigar_info:
 
 rule region_intact_gene_blast:
     input:
-        coords = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt",
+        paf = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt",
         fa = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.fa",
         lib = "map_temp/{species}/{region}/library/{species}_{region}_lib.fasta",
     output:
         "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
     conda:
         "../envs/bbstools.yaml"
-    threads: 2
+    threads: 10
     params:
         blast = lambda wildcards: REGIONS[wildcards.region]['blast'],
     shell:
         """
-        sed '/CIGAR/d' {input.coords} |
-        awk '!s[$1]++ {{print $1}}' |
-        for i in `cat`; do
-            name=$(echo $i | sed 's/|.*//g')
-            awk -v var="$i" '$1==var {{print $2,$5,$6}}' {input.coords} | sed 's/ /\t/g' > LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed"
-            bedtools getfasta -fi {input.fa} -bed LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed" > LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa" 
-            seqkit grep -p "$i" {input.lib} > LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta"
-            makeblastdb -in LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta" -dbtype nucl -logfile LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.log"
-            blastn -query LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa" -db LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta" {params.blast} -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen" >> {output}
-            rm LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name".bed"  LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_region.fa"  LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.fasta"*  LRS-annotation/{wildcards.species}/{wildcards.genome}/{wildcards.region}/annotation/$name"_lib.log"
-        done
+        python ../scripts/paf_blast.py -p {input.paf} -r {input.lib} -f {input.fa} -o {output}
         echo "Aligned {input.lib} to the intact {wildcards.region} region on {wildcards.genome}."
         """
 
@@ -312,77 +322,92 @@ rule region_intact_join_blast_paf:
         info = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.txt",
         blast = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
     output:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_candidates.csv"
     shell:
         """
         python ../scripts/blast_extraction.py -i {input.info} -b {input.blast} -o {output}
         echo "Merged Blast and Minimap2 results for {wildcards.region} region on {wildcards.genome}."
         """
 
-rule region_intact_filter_queries:
+rule region_intact_filter:
     input:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_candidates.csv"
     output:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.csv"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_filter.csv"
     shell:
         """
         python ../scripts/filter_query_ident.py -i {input} -o {output}
         echo "Filter genes for {wildcards.region} region on sample {wildcards.genome}"
         """
 
+rule region_intact_accurate_figure:
+    input:
+        filtr = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_filter.csv",
+        bed = "LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}_flanking_genes.bed",
+    output:
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv"
+    shell:
+        """
+        python ../scripts/coord_correction.py -b {input.bed} -f {input.filtr} -o {output}
+        """
+
 rule region_intact_figure:
     input:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.csv"
-#        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups.csv",
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv"
     conda:
         "../envs/dna_viewer.yaml"
     output:
-        "figures/v2_{species}_{genome}_{region}.pdf"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report.html"
+    params:
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report"
     threads: 6
     shell:
         """
-        python ../scripts/DNA_viewer.py {input} v2_{wildcards.species}_{wildcards.genome}_{wildcards.region}
+        python ../scripts/dna_viewer_table.py -i {input} -o {params}
         echo "Generate figure for {wildcards.region} region on sample {wildcards.genome}."
         """
 
 rule closed_flanks:
     input:
-#        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_recheck.blast"
-        "figures/v2_{species}_{genome}_{region}.pdf"
-#        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_query_groups_filtered.csv"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report.html"
     output:
-        touch("LRS-annotation/{species}/{genome}/{region}/closed/{genome}_{region}_coords.txt")
+        touch("LRS-annotation/{species}/{genome}/{region}/closed/{genome}_{region}.done")
 
 rule fragmented_flanks:
     input:
         "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}_status.csv"
     output:
-        touch("LRS-annotation/{species}/{genome}/{region}/fragmented/{genome}_{region}_coords.txt")
+        touch("LRS-annotation/{species}/{genome}/{region}/fragmented/{genome}_{region}.done")
 
 rule missing_flanks:
     output:
-        touch("LRS-annotation/{species}/{genome}/{region}/missing/{genome}_{region}_coords.txt")
+        touch("LRS-annotation/{species}/{genome}/{region}/missing/{genome}_{region}.done")
 
 def check_gaps(wildcards):
     with checkpoints.check_flanking_genes.get(**wildcards).output[0].open() as f:
         for line in f:
             col1, col2, col3, col4 = line.strip().split("\t")
             if col2 == "closed":
-                return "LRS-annotation/{species}/{genome}/{region}/closed/{genome}_{region}_coords.txt"
+                return "LRS-annotation/{species}/{genome}/{region}/closed/{genome}_{region}.done"
             elif col2 == "fragmented":
-                return "LRS-annotation/{species}/{genome}/{region}/fragmented/{genome}_{region}_coords.txt"
+                return "LRS-annotation/{species}/{genome}/{region}/fragmented/{genome}_{region}.done"
             else:
-                return "LRS-annotation/{species}/{genome}/{region}/missing/{genome}_{region}_coords.txt"
-
+                return "LRS-annotation/{species}/{genome}/{region}/missing/{genome}_{region}.done"
 
 rule check_region:
     input:
         check_gaps
     output:
-        "LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}_annotation.done"
+        "LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}.annotated"
     shell:
         "cat {input} > {output}"
 
+onsuccess:
+    shell("""
+        if [[ $(find ./inputs -name "*.fai" -print -quit 2>/dev/null) ]]; then
+            find . -name "*.fai" -delete
+        fi
+    """)
 
 
 
