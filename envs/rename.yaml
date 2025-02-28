@@ -5,3 +5,4 @@ channels:
   - default
 dependencies:
   - biopython=1.85 
+  - seqkit

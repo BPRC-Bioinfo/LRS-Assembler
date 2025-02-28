@@ -40,7 +40,6 @@ def group_by_ref_name(file_path):
 #    print (groups)
 
     # Process the number of subgroups
-    result_data = []
     dict_data = {}
 
     # Now process each group

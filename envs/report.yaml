@@ -1,6 +1,5 @@
-name: report
+name: LRS-report
 channels:
- - defaults
  - conda-forge
  - bioconda
 dependencies:
