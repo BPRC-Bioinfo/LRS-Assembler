@@ -1,0 +1,166 @@
+---
+title: "LRS-Assember annotation pipeline"
+date: "`r paste('Date:', format(Sys.Date(), '%d-%m-%Y'))`"
+version: "0.0.2"
+params:
+  sample: "sample"
+  species: "species"
+  region: "region"
+  chr: FALSE
+output:
+  html_document:
+    fig_caption: yes
+    df_print: kable
+  word_document:
+    fig_caption: yes
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+# Do not print r codes
+knitr::opts_chunk$set(echo = FALSE)
+# Scientific numbers
+options(scipen = 999)
+
+library(ggplot2)
+library(knitr)
+library(tidyverse)
+library(reticulate)
+library(kableExtra)
+library(htmltools)
+```
+
+```{r setup_sample, echo = FALSE}
+sample <- params$sample
+region <- params$region
+species <- params$species
+
+```
+
+```{r setup_path, echo = FALSE}
+path = "annotation"
+```
+
+```{r check_files}
+
+status_file <- paste0(sample,"_",region,"_status.csv")
+filter_file <- paste0(path,"/",sample,"_",region,"_final.tsv")
+
+```
+
+
+```{r general_info, echo = FALSE}
+
+flanks <- read.csv(paste0(sample,"_",region,"_status.csv"), header = F, sep = "\t")
+
+if ("flanks" %in% flanks$V1){
+  if ("closed" %in% flanks$V2){
+    roi = "intact"
+    contig = flanks$V4
+  }
+}
+
+left_flank = gsub("/.*", "", flanks$V3)
+right_flank = gsub(".*/", "", flanks$V3)
+```
+
+## General information
+
+Sample: `r sample`
+
+Region: `r region`
+
+Species: `r species`
+
+Left flank: `r left_flank`
+
+Right flak: `r right_flank`
+
+Region of interest status: `r roi`
+
+ROI's contig: `r contig`
+
+## Annotation
+
+### Mapped Fragments
+
+```{r table, }
+
+candidates <- read.csv(filter_file, header = T, sep = "\t" )
+
+kable(candidates) %>%
+  kable_styling(latex_options = "striped")
+```
+
+
+### Visualization
+
+```{python, results = 'hide', echo = FALSE}
+import pandas as pd
+from dna_features_viewer import GraphicFeature, GraphicRecord
+from bokeh.plotting import figure
+from bokeh.models import ColumnDataSource, HoverTool
+from bokeh.resources import CDN
+from bokeh.embed import file_html
+from bokeh.models import Range1d
+
+df_filtered = pd.read_csv(r.filter_file, sep = "\t")
+features = []
+
+for _, row in df_filtered.iterrows():
+  color = "#ffcccc" 
+  if isinstance(row["blast_percent"], str) and "Flanking gene" in row["blast_percent"]:
+    color = "#ccffcc"
+  features.append(
+    GraphicFeature(
+      start=row["chr_start"],
+      end=row["chr_end"],
+      strand=int(str(row["strand"]) + "1"),
+      label=f"{row['ref_name']}",
+      color=color
+    )
+  )
+
+start_coord = df_filtered["chr_start"].min() - 100
+end_coord = df_filtered["chr_end"].max() - start_coord + 100
+
+record = GraphicRecord(
+  sequence="ATCG",
+  first_index=start_coord,
+  sequence_length=end_coord,
+  features=features
+)
+
+# Samller the figure_width the larger the image
+ax, _ = record.plot(figure_width=20);
+ax
+
+```
+
+
+```{r}
+knitr::knit_exit()
+```
+
+
+
+```{python}
+
+zoom_start = int(df_filtered['chr_start'].min()) - 10000
+zoom_end = int(df_filtered['chr_end'].max()) + 10000
+        
+bokeh_plot = record.plot_with_bokeh(figure_width=20, figure_height=5)
+x_range = Range1d(zoom_start, zoom_end)
+
+bokeh_plot.x_range = x_range
+bokeh_plot.title.text_font_size = "20pt"
+bokeh_plot.title.align = "center"
+
+graph = file_html(bokeh_plot, CDN, "Region Viewer")
+
+```
+
+
+```{r}
+HTML(py$graph)
+```

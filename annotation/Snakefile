@@ -5,7 +5,7 @@
 import pandas as pd
 from glob import glob
 from pathlib import Path
-
+from multiprocessing import cpu_count
 
 configfile:"configs/macaque_v2.yaml"
 REGIONS = config['region']
@@ -20,11 +20,10 @@ print (f"Welcome to LRS-assembler standalone annotation.")
 
 print (f"Detected {len(GENOMES)} samples for analysis.")
 
+
 rule all:
     input:
         expand("LRS-annotation/{species}/{genome}/{region}/flanking/{genome}_{region}.annotated", species = SPECIES, region = REGIONS, genome = GENOMES),
-#        expand("map_temp/{species}/{region}/{genome}_{region}_flank_genes.sam", species = SPECIES, region = REGIONS, genome = GENOMES)
-
 
 
 def check_library(region_name, library):
@@ -33,8 +32,6 @@ def check_library(region_name, library):
         print(f"Error: Library file not found at {library} for region {region_name}")
         sys.exit(1)
     return library
-
-# A single download rule not trigger for every region. Output as temp
 
 ## Flanking genes detection
 rule download_flanking_genes:
@@ -308,7 +305,8 @@ rule region_intact_gene_blast:
         "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
     conda:
         "../envs/bbstools.yaml"
-    threads: 10
+#    threads: cpu_count()
+    threads: lambda wildcards, input: max(2, cpu_count() // 2)
     params:
         blast = lambda wildcards: REGIONS[wildcards.region]['blast'],
     shell:
@@ -367,9 +365,39 @@ rule region_intact_figure:
         echo "Generate figure for {wildcards.region} region on sample {wildcards.genome}."
         """
 
+rule prepare_report:
+    input:
+        data = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv",
+        report = "../scripts/annotation_report.Rmd"
+    output:
+        "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}.Rmd"
+    shell:
+        """
+        cp {input.report} {output} 
+        """
+
+rule region_intact_report:
+    input:
+        markdown = "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}.Rmd",
+        data = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv",
+#        "figures/v2_{species}_{genome}_{region}.svg",
+    output:
+        html = "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}_intact.html"
+    conda:
+        "../envs/report.yaml"
+    params:
+        "LRS-annotation/{species}/{genome}/{region}/"
+    log:
+        "LRS-annotation/{species}/{genome}/{region}/logs/{genome}_{region}_report.log"
+    shell:
+        """
+        Rscript -e "rmarkdown::render('{input.markdown}', output_file=paste0('{wildcards.genome}_{wildcards.region}','_intact'), output_format='html_document',params=list(sample='{wildcards.genome}',species='{wildcards.species}', region='{wildcards.region}'))" 2> {log}
+        echo "Final report generated"
+        """
+
 rule closed_flanks:
     input:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report.html"
+        "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}_intact.html"
     output:
         touch("LRS-annotation/{species}/{genome}/{region}/closed/{genome}_{region}.done")
 
@@ -410,4 +438,17 @@ onsuccess:
     """)
 
 
+'''
+## Use all cores
+    threads: cpu_count()
+## Use half available cores
+    threads: lambda wildcards, input: max(2, cpu_count() // 2)
 
+rule report_runtime:
+    output: "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}_runtime.txt"
+    run:
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        with open(output[0], "w") as f:
+            f.write(f"Total runtime: {elapsed_time} seconds\n")
+'''
