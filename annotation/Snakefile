@@ -7,7 +7,7 @@ from glob import glob
 from pathlib import Path
 from multiprocessing import cpu_count
 
-configfile:"configs/macaque_v2.yaml"
+configfile:"configs/annno_run-config.yaml"
 REGIONS = config['region']
 SPECIES=config['species'].replace(" ", "_")
 
@@ -303,6 +303,8 @@ rule region_intact_gene_blast:
         lib = "map_temp/{species}/{region}/library/{species}_{region}_lib.fasta",
     output:
         "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_gene_coords_paf.blast",
+    log:
+        "LRS-annotation/{species}/{genome}/{region}/logs/{genome}_{region}_blast.log"
     conda:
         "../envs/bbstools.yaml"
 #    threads: cpu_count()
@@ -311,7 +313,7 @@ rule region_intact_gene_blast:
         blast = lambda wildcards: REGIONS[wildcards.region]['blast'],
     shell:
         """
-        python ../scripts/paf_blast.py -p {input.paf} -r {input.lib} -f {input.fa} -o {output}
+        python ../scripts/paf_blast.py -p {input.paf} -r {input.lib} -f {input.fa} -o {output} &> {log}
         echo "Aligned {input.lib} to the intact {wildcards.region} region on {wildcards.genome}."
         """
 
@@ -365,9 +367,20 @@ rule region_intact_figure:
         echo "Generate figure for {wildcards.region} region on sample {wildcards.genome}."
         """
 
+rule gene_bed_file:
+    input:
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv"
+    output:
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.bed"
+    shell:
+        """
+        sed '/ref_name/d' {input} | awk '{{print $9,$2,$3,$1}}' | sed 's/ /\t/g' > {output}
+        """
+
 rule prepare_report:
     input:
         data = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv",
+        bed = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.bed",
         report = "../scripts/annotation_report.Rmd"
     output:
         "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}.Rmd"

@@ -45,7 +45,8 @@ path = "annotation"
 
 status_file <- paste0(sample,"_",region,"_status.csv")
 filter_file <- paste0(path,"/",sample,"_",region,"_final.tsv")
-
+fasta_file <- paste0(path,"/",sample,"_",region,"_intact.fa")
+bed_file <- paste0(path,"/",sample,"_",region,"_intact.bed")
 ```
 
 
@@ -81,19 +82,6 @@ Region of interest status: `r roi`
 ROI's contig: `r contig`
 
 ## Annotation
-
-### Mapped Fragments
-
-```{r table, }
-
-candidates <- read.csv(filter_file, header = T, sep = "\t" )
-
-kable(candidates) %>%
-  kable_styling(latex_options = "striped")
-```
-
-
-### Visualization
 
 ```{python, results = 'hide', echo = FALSE}
 import pandas as pd
@@ -137,6 +125,23 @@ ax
 
 ```
 
+### Mapped Fragments
+
+```{r table, }
+
+candidates <- read.csv(filter_file, header = T, sep = "\t" )
+
+kable(candidates) %>%
+  kable_styling(latex_options = "striped")
+```
+
+
+### Files download
+
+```{r echo=FALSE}
+xfun::embed_file(fasta_file, text = "Download FASTA sequence.")
+xfun::embed_file(bed_file, text = "Download BED coordinates.")
+```
 
 ```{r}
 knitr::knit_exit()

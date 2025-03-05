@@ -4,10 +4,8 @@
 
 import argparse
 import pandas as pd
-#from statistics import mean
 
 def merging_correcting_coords(bed_file, filter_file, output_file):
-
     bed_file = bed_file.sort_values(1, ascending = True)
     bed_file.columns = ["contig", "chr_start", "chr_end", "ref_name", "mapq", "strand"]
     bed_file['ref_name'] = bed_file['ref_name'].str.split("_").str[-1]
@@ -16,16 +14,15 @@ def merging_correcting_coords(bed_file, filter_file, output_file):
     bed_file['blast_percent'] = 'Flanking gene'
     bed_file['blast_align'], bed_file['blast_mismatch'], bed_file['blast_gap'] = 0, 0, 0
     bed_file['ref_len'] = bed_file['chr_end'] - bed_file['chr_start']
+
     bed_file = bed_file[['ref_name', 'chr_start', 'chr_end', 'blast_percent',  'blast_align',  'blast_mismatch',  'blast_gap', 'strand',  'ref_len']]
     bed_file = bed_file.astype({'chr_start': int, 'chr_end': int})
     roi_start = int(bed_file['chr_start'][0]) -1
 
+    filter_file = filter_file.astype({'roi_start': int, 'roi_end': int})
+    filter_file['chr_start'] = filter_file['roi_start'] + roi_start
+    filter_file['chr_end'] = filter_file['roi_end'] + roi_start
     
-
-    filter_file = filter_file.astype({'chr_start': int, 'chr_end': int})
-    filter_file['chr_start'] = filter_file['chr_start'] + roi_start
-    filter_file['chr_end'] = filter_file['chr_end'] + roi_start
-
     final_dataframe = pd.concat([bed_file, filter_file])
     final_dataframe = final_dataframe.sort_values('chr_start')
 
@@ -33,13 +30,11 @@ def merging_correcting_coords(bed_file, filter_file, output_file):
     print (final_dataframe)
 
 if __name__ == "__main__":
-    # Set up argparse to handle command-line arguments
     parser = argparse.ArgumentParser(description="Group data by the first column and split into sub-groups based on fragment length and coordinates.")
     parser.add_argument("-b","--bed_file", help="Input file containing the data to process")
     parser.add_argument("-f","--filter_file", help="Input file containing the data to process")
     parser.add_argument("-o","--output", help="Output file name (without extension)")
 
-    # Parse arguments
     args = parser.parse_args()
 
     try:
