@@ -131,6 +131,15 @@ ax
 
 candidates <- read.csv(filter_file, header = T, sep = "\t" )
 
+replace_strand <- function(df, strand_column = "strand") {
+  df[[strand_column]] <- ifelse(df[[strand_column]] == "-", "neg", 
+                                ifelse(df[[strand_column]] == "+", "pos", 
+                                       df[[strand_column]]))
+  return(df)
+}
+
+candidates <- replace_strand(candidates)
+
 kable(candidates) %>%
   kable_styling(latex_options = "striped")
 ```
@@ -138,10 +147,17 @@ kable(candidates) %>%
 
 ### Files download
 
-```{r echo=FALSE}
+
+```{r fasta_download, echo=FALSE}
 xfun::embed_file(fasta_file, text = "Download FASTA sequence.")
+```
+
+
+
+```{r bed_download, echo = FALSE}
 xfun::embed_file(bed_file, text = "Download BED coordinates.")
 ```
+
 
 ```{r}
 knitr::knit_exit()
