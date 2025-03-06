@@ -369,12 +369,12 @@ rule region_intact_figure:
 
 rule gene_bed_file:
     input:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_filter.csv"
     output:
         "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_intact.bed"
     shell:
         """
-        sed '/ref_name/d' {input} | awk '{{print $9,$2,$3,$1}}' | sed 's/ /\t/g' > {output}
+        sed '/ref_name/d' {input} | awk -F'\t' '{{print $9,$2,$3,$1}}' | sed 's/ /\t/g' > {output}
         """
 
 rule prepare_report:
