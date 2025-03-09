@@ -1,10 +1,17 @@
+# LRS-Assembly
+# v 0.0.4
+# By Giang Le & Jaimy
+
+
 import os
 import glob
+import pandas as pd
+from pathlib import Path
 
 configfile: "configs/run-config.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
-REGIONS = config.get('region', 'no_region')
+REGIONS = config['region']
 
 NSAMPLES = list(config["nanopore"].keys())
 PSAMPLES = list(config["pacbio"].keys())
@@ -36,7 +43,6 @@ for sample, nano_dir in config['nanopore'].items():
             print(f"Found {num_files} fastq.gz files in {input_dir}.")
         else:
             print(f"Warning: No fastq.gz files found at {input_dir}.")
-            sys.exit(1)
 
 for sample, pac_dir in config['pacbio'].items():
     print (f"For {sample} pacbio:")   
@@ -54,12 +60,101 @@ for sample, pac_dir in config['pacbio'].items():
             print(f"Found {num_pbi_files} PBI file(s), but no BAM files in {input_dir}.")
         else:
             print(f"Warning: No BAM or PBI files found at {input_dir}.")
-            sys.exit(1)
 
 rule all:
     input:
-        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
+#        expand("reference/{ref}.{ref_ext}", ref = REFERENCE, ref_ext = ['fna','gff','info']),
+#        expand("results/{sample}/scaffolds/ntlink/{sample}_hybridPN_denovo_ntlink.fasta", sample = SAMPLES),
+#        expand("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv", sample = SAMPLES, ref = REFERENCE)
+#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
+#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_annotation.finish", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
+#        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
+        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, species = SPECIES, ref = REFERENCE),
+#        expand("results/{sample}/annotation/{sample}_{species}_{ref}_final_annotation.finish", sample = SAMPLES, ref = REFERENCE, species = SPECIES)
+#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
+#        expand("regions/{species}/{sample}/{region}/flanking/{sample}_{hap}_{ref}_{region}_annotation.finish", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"])
 
+def check_library(region_name, library):
+    library_path = Path(library)
+    if not library_path.is_file():
+        print(f"Error: Library file not found at {library} for region {region_name}")
+        sys.exit(1)
+    return library
+
+rule prepare_genome_reference:
+    output:
+        genome = "reference/{ref}.fna",
+    conda:
+        "../envs/datasets.yaml"
+    retries: 3
+    params:
+        genome = lambda wildcards: config["reference"][wildcards.ref]['genome'],
+        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
+        zipfile = "{ref}_genome.zip",
+    shell:
+        """
+        if [ -z "{params.genome}" ] || [ ! -f "{params.genome}" ]; then
+            echo "Genome file not found locally, downloading from NCBI"
+            datasets download genome accession {params.ref} --filename {params.zipfile} --include genome || (echo "Warning: download genome failed. Check accession or prepare the genome locally.")
+            unzip {params.zipfile} -d "{params.ref}_fna"
+            mv {params.ref}_fna/ncbi_dataset/data/{params.ref}/{params.ref}*.fna {output.genome}
+            rm -r {params.zipfile} {params.ref}_fna
+        else
+            echo "Using local genome file {params.genome}"
+            cp {params.genome} {output.genome}
+        fi
+        echo "Complete prepare_genome_reference"
+        """
+
+rule prepare_gff_reference:
+    output:
+        gff = "reference/{ref}.gff",
+    conda:
+        "../envs/datasets.yaml"
+    retries: 3
+    params:
+        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
+        gff = lambda wildcards: config["reference"][wildcards.ref]['gff'],
+        zipfile = "{ref}_gff.zip",
+    shell:
+        """
+        if [ -z "{params.gff}" ] || [ ! -f "{params.gff}" ]; then
+            echo "Gff file not found locally, downloading from NCBI"
+            datasets download genome accession {params.ref} --filename {params.zipfile} --include gff3 || (echo "Warning: download gff failed. Check accession or prepare locally.")
+            unzip {params.zipfile} -d "{params.ref}_gff"
+            mv {params.ref}_gff/ncbi_dataset/data/{params.ref}/genomic.gff {output.gff}
+            rm -r {params.zipfile} {params.ref}_gff
+        else
+            echo "Using local genome file {params.gff}"
+            cp {params.gff} {output.gff}
+        fi
+        echo "Complete prepare_gff_reference"
+        """
+
+rule prepare_chromosome_reference:
+    output:
+        info = "reference/{ref}.info",
+    retries: 3
+    conda:
+        "../envs/datasets.yaml"
+    params:
+        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
+        info = lambda wildcards: config["reference"][wildcards.ref]['chr_info'],
+        zipfile = "{ref}_info.zip",
+    shell:
+        """
+        if [ -z "{params.info}" ] || [ ! -f "{params.info}" ]; then
+            echo "Info file not found locally, downloading from NCBI"
+            datasets download genome accession {params.ref} --filename {params.zipfile} --include seq-report || (echo "Warning: download info failed. Check accession or prepare locally.")
+            unzip {params.zipfile} -d "{params.ref}_info"
+            python scripts/json_parse.py {params.ref}_info/ncbi_dataset/data/{params.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output.info}
+            rm -r {params.zipfile} {params.ref}_info
+        else
+            echo "Using local genome file {params.info}"
+            cp {params.info} {output.info}
+        fi
+        echo "Complete prepare_chromosome_reference"
+        """
 
 rule combine_filter_nanopore_fastq:
     input:
@@ -74,9 +169,13 @@ rule combine_filter_nanopore_fastq:
         "../envs/seqkit.yaml"
     shell:
         """
+        if [ -z "{input}" ]; then
+            echo "No nanopore fastq files found"
+            exit
+        fi
         for i in {input}; do
             cat $i
-        done | seqkit sana | seqkit seq -m 5000 | seqkit rmdup -s -o {output}
+        done | seqkit sana | seqkit seq -m 5000 -Q 9 | seqkit rmdup -s -o {output}
         echo "The rule combine_filter_nanopore_fastq complete for sample {wildcards.sample}"
         """
 
@@ -95,6 +194,10 @@ rule combine_pacbio_fastq:
         "../envs/bam2fastx.yaml"
     shell:
         """
+        if [ -z {input.pacbio_bam} ]; then
+            echo "No pacbio bam files found"
+            exit
+        fi
         bam2fastq -o fastq/{wildcards.sample}_pacbio_raw {input.pacbio_bam}
         echo "The rule combine_pacbio_fastq complete for sample {wildcards.sample}"
         """
@@ -117,7 +220,7 @@ rule filter_pacbio_fastq:
 
 rule filtered_reads_stats:
     input:
-        filtered = "results/{sample}/raws/{sample}_{seqMachine}_5000.fastq.gz"
+        filtered = ancient("results/{sample}/raws/{sample}_{seqMachine}_5000.fastq.gz")
     output:
         filtered = "results/{sample}/info/{sample}_{seqMachine}_stat_filtered.txt",
     wildcard_constraints:
@@ -181,7 +284,7 @@ rule contigs_quast:
     conda:
         "../envs/quast.yaml"
     benchmark:
-        "results/{sample}/benchmarks/03_{sample}_hybridPN_quast.bench"
+        "results/{sample}/benchmarks/02_{sample}_hybridPN_quast.bench"
     params:
         "results/{sample}/info/{sample}_hybridPN_denovo_quast/"
     shell:
@@ -212,7 +315,7 @@ rule ntLink_grid_run:
         "../envs/ntlink.yaml"
     threads: 10
     benchmark:
-        "results/{sample}/benchmarks/04_{sample}_hybridPN_denovo_ntlink_k{kval}_w{wval}.bench"
+        "results/{sample}/benchmarks/03_{sample}_hybridPN_denovo_ntlink_k{kval}_w{wval}.bench"
     log:
         "results/{sample}/logs/02_{sample}_hybridPN_denovo_ntlink_k{kval}.w{wval}.log"
     shell:
@@ -265,87 +368,6 @@ rule ntlink_final:
         echo "The rule ntlink_final complete for sample {wildcards.sample}"
         """
 
-rule prepare_genome_reference:
-    output:
-        genome = "reference/{ref}.fna",
-        zipfile = temp("{ref}_genome.zip"),
-    conda:
-        "../envs/datasets.yaml"
-    retries: 3
-    params:
-        genome = lambda wildcards: config["reference"][wildcards.ref]['genome'],
-        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
-    shell:
-        """
-        if [ ! -f {params.genome} ]; then
-            echo "Genome file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {output.zipfile} --include genome || (echo "Warning: download genome failed. Check accession or prepare the genome locally.")
-            unzip {output.zipfile} -d "reference"
-            mv reference/ncbi_dataset/data/{params.ref}/{params.ref}*.fna {output.genome}
-        else
-            echo "Using local genome file {params.genome}"
-            cp {params.genome} {output}
-        fi
-        if [ -f "reference/README.md" ]; then
-            rm reference/README.md
-        fi
-        echo "Complete prepare_genome_reference"
-        """
-
-rule prepare_gff_reference:
-    output:
-        gff = "reference/{ref}.gff",
-        zipfile = temp("{ref}_gff.zip"),
-    conda:
-        "../envs/datasets.yaml"
-    retries: 3
-    params:
-        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
-        gff = lambda wildcards: config["reference"][wildcards.ref]['gff']
-    shell:
-        """
-        if [ ! -f {params.gff} ]; then
-            echo "Gff file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {output.zipfile} --include gff3 || (echo "Warning: download gff failed. Check accession or prepare locally.")
-            unzip {output.zipfile} -d "reference"
-            mv reference/ncbi_dataset/data/{params.ref}/genomic.gff {output.gff}
-        else
-            echo "Using local genome file {params.gff}"
-            cp {params.gff} {output}
-        fi
-        if [ -f "reference/README.md" ]; then
-            rm reference/README.md
-        fi
-        echo "Complete prepare_gff_reference"
-        """
-
-rule prepare_chromosome_reference:
-    output:
-        info = "reference/{ref}.info",
-        zipfile = temp("{ref}_info.zip"),
-    retries: 3
-    conda:
-        "../envs/datasets.yaml"
-    params:
-        ref = lambda wildcards: config["reference"][wildcards.ref]['accession_number'],
-        info = lambda wildcards: config["reference"][wildcards.ref]['chr_info']
-    shell:
-        """
-        if [ ! -f {params.info} ]; then
-            echo "Info file not found locally, downloading from NCBI"
-            datasets download genome accession {params.ref} --filename {output.zipfile} --include seq-report || (echo "Warning: download info failed. Check accession or prepare locally.")
-            unzip {output.zipfile} -d "reference"
-            python scripts/json_parse.py reference/ncbi_dataset/data/{params.ref}/sequence_report.jsonl | sed '/accession/d;/MT/d' | awk '{{print $1",@_chr"$2}}' > {output.info}
-        else
-            echo "Using local genome file {params.info}"
-            cp {params.info} {output}
-        fi
-        if [ -f "reference/README.md" ]; then
-            rm reference/README.md
-        fi
-        echo "Complete prepare_chromosome_reference"
-        """
-
 rule primary_genome_ragTag:
     input:
         ref = ancient("reference/{ref}.fna"),
@@ -356,7 +378,7 @@ rule primary_genome_ragTag:
         "results/{sample}/scaffolds/ragtag/{ref}/"
     threads: 10
     benchmark:
-        "results/{sample}/benchmarks/05_{sample}_hybridPN_{ref}_ragtag.bench"
+        "results/{sample}/benchmarks/04_{sample}_hybridPN_{ref}_ragtag.bench"
     conda:
         "../envs/ragtag.yaml"
     shell:
@@ -382,7 +404,7 @@ rule haplo_genome_ragtag:
     conda:
         "../envs/ragtag.yaml"
     benchmark:
-        "results/{sample}/benchmarks/05_{sample}_hybridPN_{hap}_{ref}_ragtag.bench"
+        "results/{sample}/benchmarks/04_{sample}_hybridPN_{hap}_{ref}_ragtag.bench"
     shell:
         """
         if [[ {wildcards.ref} != "none" ]]; then
@@ -411,7 +433,7 @@ rule rename_scaffolds:
         fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa",
         acc = temp("{sample}_hybridPN_{ref}.temp")
     benchmark:
-        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_rename_scaffolds.bench"
+        "results/{sample}/benchmarks/04_{sample}_hybridPN_{ref}_rename_scaffolds.bench"
     shell:
         """
         awk -F',' '{{print $1}}' {input.acc} > {output.acc} 
@@ -421,7 +443,7 @@ rule rename_scaffolds:
         done < {input.acc}
         """
 
-rule rename_haplotypes:
+rule rename_haplo_scaffolds:
     input:
         acc = "results/{sample}/scaffolds/ragtag/{ref}/{sample}_{ref}_accs_chrs.txt",
         fa = "results/{sample}/scaffolds/ragtag/{ref}/{hap}/{sample}_hybridPN_denovo_{hap}.fa"
@@ -429,7 +451,7 @@ rule rename_haplotypes:
         fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa",
         acc = "{sample}_hybridPN_{ref}_{hap}.temp"
     benchmark:
-        "results/{sample}/benchmarks/06_{sample}_hibridPN_{ref}_{hap}_rename_scaffolds.bench"
+        "results/{sample}/benchmarks/04_{sample}_hibridPN_{ref}_{hap}_rename_scaffolds.bench"
     shell:
         """
         awk -F',' '{{print $1}}' {input.acc} > {output.acc}
@@ -437,44 +459,6 @@ rule rename_haplotypes:
         while IFS="," read -r acc chrs; do
             sed "s/${{acc}}/${{chrs}}_{wildcards.hap}/g" -i {output.fa}
         done < {input.acc}
-        """
-
-rule scaffold_quast:
-    input:
-        "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa",
-    output:
-        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/report.tsv"
-    conda:
-        "../envs/quast.yaml"
-    benchmark:
-        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_quast_final.bench"
-    params:
-        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/"
-    shell:
-        """
-        quast.py {input} -o {params}
-        echo "Complete quast analysis of sample {wildcards.sample} scaffolds"
-        """
-
-rule scaffold_busco:
-    input:
-        "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa"
-    output:
-        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/run_primates_odb10/short_summary.txt"
-    conda:
-        "../envs/busco.yaml"
-    log:
-        "results/{sample}/logs/03_{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_busco.log"
-    benchmark:
-        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_busco.bench"
-    params:
-        busco = config["busco"],
-        dir = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/"
-    threads: 20
-    shell:
-        """
-        busco -m genome -i {input} -o {params.dir} -l {params.busco} -c {threads} -f 2> {log}
-        echo "Complete BUSCO analysis of sample {wildcards.sample} scaffolds"
         """
 
 rule primary_genome_liftOff:
@@ -489,7 +473,7 @@ rule primary_genome_liftOff:
         unmap = "results/{sample}/scaffolds/ragtag/{ref}/{sample}_hybridPN_denovo_ntlink_{ref}_liftoff_unmapped.txt",
         dir = temp(directory("results/{sample}/scaffolds/ragtag/{ref}/liftoff_hybridPN")),
     benchmark:
-        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_liftoff.bench"
+        "results/{sample}/benchmarks/05_{sample}_hybridPN_{ref}_liftoff.bench"
     conda:
         "../envs/liftoff.yaml"
     threads: 10
@@ -510,7 +494,7 @@ rule primray_genome_gff_correct:
     output:
         gff = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",
     benchmark:
-        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_liftoff_correct.bench"
+        "results/{sample}/benchmarks/05_{sample}_hybridPN_{ref}_liftoff_correct.bench"
     conda:
         "../envs/genometools.yaml"
     shell:
@@ -519,26 +503,521 @@ rule primray_genome_gff_correct:
         echo "Complete liftoff analysis of sample {wildcards.sample} scaffolds"
         """
 
-rule final_quast_busco:
+rule scaffold_quast:
     input:
-        gff = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.gff",
-        contig_quast = "results/{sample}/info/{sample}_hybridPN_denovo_quast/report.tsv",
-        busco = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/run_primates_odb10/short_summary.txt",
+        "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa",
+    output:
+        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/report.tsv"
+    conda:
+        "../envs/quast.yaml"
+    benchmark:
+        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_quast_final.bench"
+    params:
+        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/"
+    shell:
+        """
+        quast.py {input} -o {params}
+        echo "Complete quast analysis of sample {wildcards.sample} scaffolds"
+        """
+
+rule reference_quast:
+    input:
+        "reference/{ref}.fna",
+    output:
+        "reference/{ref}_quast/report.tsv"
+    conda:
+        "../envs/quast.yaml"
+    params:
+        "reference/{ref}_quast/"
+    shell:
+        """
+        quast.py {input} -o {params}
+        """
+
+checkpoint scaffold_busco:
+    input:
+        "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa"
+    output:
+        busco_dir = directory("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/"),
+    conda:
+        "../envs/busco.yaml"
+    log:
+        "results/{sample}/logs/03_{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_busco.log"
+    benchmark:
+        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_busco.bench"
+    params:
+        busco = config["busco"],       
+    threads: 20
+    shell:
+        """
+        busco -m genome -i {input} -o {output.busco_dir} -l {params} -c {threads} -f 2> {log}
+        echo "Complete BUSCO analysis of sample {wildcards.sample} scaffolds"
+        """
+
+checkpoint reference_busco:
+    input:
+        "reference/{ref}.fna"
+    output:
+        "reference/{ref}_busco/",
+    conda:
+        "../envs/busco.yaml"
+    params:
+        busco = config["busco"],
+    threads: 20
+    shell:
+        """
+        busco -m genome -i {input} -o {output} -l {params.busco} -c {threads} -f 
+        """
+
+def scaffold_busco_output(wildcards):
+    checkpoint_output = checkpoints.scaffold_busco.get(**wildcards).output[0]
+    return expand("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/short_summary.{i}_busco.txt",
+                sample = wildcards.sample,
+                ref=wildcards.ref,
+                i=glob_wildcards(os.path.join(checkpoint_output, "short_summary.{i}_busco.txt")).i)
+
+def reference_busco_output(wildcards):
+    checkpoint_output = checkpoints.reference_busco.get(**wildcards).output[0]
+    return expand("reference/{ref}_busco/short_summary.{i}_busco.txt",
+                ref=wildcards.ref,
+                i=glob_wildcards(os.path.join(checkpoint_output, "short_summary.{i}_busco.txt")).i)
+
+rule busco_directory:
+    input:
+        ref = reference_busco_output,
+        scaffold = scaffold_busco_output
+    output:
+        directory("results/{sample}/info/compare_{sample}_{ref}_busco/")
+    shell:
+        """
+        mkdir -p {output}
+        cp {input} {output}
+        """
+
+rule busco_final_figure:
+    input:
+        file = "results/{sample}/info/{sample}_vs_{ref}_busco.txt",
+        outdir ="results/{sample}/info/compare_{sample}_{ref}_busco/"
+    output:
+        "results/{sample}/info/compare_{sample}_{ref}_figure.png"
+    conda:
+        "../envs/busco.yaml"
+    benchmark:
+        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_busco_image.bench"
+    shell:
+        """
+        generate_plot.py --working_directory {input.outdir}
+        mv {input.outdir}/busco_figure.png {output}
+        """
+
+rule busco_compare:
+    input:
+        ref = reference_busco_output,
+        scaffold = scaffold_busco_output
+    output:
+        "results/{sample}/info/{sample}_vs_{ref}_busco.txt"
+    shell:
+        """
+        custom_array=("Complete" "Complete_and_single-copy" "Complete_and_duplicated" "Fragmented" "Missing" "Total")
+        (echo "Description, {wildcards.ref}, {wildcards.sample}"; paste <(grep "Result" -A 8 {input.ref} | tail -6 | awk '{{print $1}}') <(grep "Result" -A 8 {input.scaffold} | tail -6 | awk '{{print $1}}')  | awk -v arr="${{custom_array[*]}}" 'BEGIN {{split(arr, a, " ")}} {{printf "%s, %s, %s\\n", a[NR], $1, $2}}') > {output}
+        """
+
+rule final_quast:
+    input:
+        contig_quast = "reference/{ref}_quast/report.tsv",
         scaffold_quast = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/report.tsv"
     output:
         stats = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv"
     benchmark:
-        "results/{sample}/benchmarks/08_{sample}_hybridPN_{ref}_stats_collect.bench"
+        "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_stats_collect.bench"
     shell:
         """
-        busco_db=$(grep "Total BUSCO" {input.busco} | awk '{{print $1}}')
         grep "Assembly" {input.contig_quast} | awk '{{print $2}}' > {output}
-        grep "Complete BUSCO"  {input.busco} | awk -v var="$busco_db" '{{print $1/var*100}}' >> {output} 
         grep "contigs (>= 0 bp)" {input.contig_quast} | awk -F"\t" '{{print $2}}' >> {output}
         grep "N50" {input.contig_quast} | awk '{{print $2}}' >> {output}
         grep "contigs (>= 0 bp)" {input.scaffold_quast} | awk -F"\t" '{{print $2}}' >> {output}
         grep "N50" {input.scaffold_quast} | awk '{{print $2}}' >> {output}
         """
+
+rule download_flanking_genes:
+    params:
+        left = lambda wildcards: REGIONS[wildcards.region]['left_flank'],
+        right = lambda wildcards: REGIONS[wildcards.region]['right_flank'],
+        ref = config['species']
+    threads: 10
+    output:
+        temp = temp("flanking_genes/{species}/temp_{region}.fa"),
+        final = "flanking_genes/{species}/{region}.fasta",
+        info = "flanking_genes/{species}/info_{region}.txt"
+    retries: 3
+    conda:
+        "../envs/flanking.yaml"
+    shell:
+        """
+        left_flank={params.left}
+        touch {output.info}
+
+        if [[ ! -z $left_flank ]]; then
+            datasets download gene symbol {params.left} --taxon "{params.ref}" --include gene --filename {params.left}.zip || (echo "Warning: Download left flanking failed! Check if gene or sepecies is correct.")
+            unzip {params.left}.zip -d {params.left}
+            cat {params.left}/ncbi_dataset/data/gene.fna >> {output.temp}
+            rm -r {params.left} {params.left}.zip
+            echo "left:" {params.left} >> {output.info}
+            sleep 3
+        fi
+
+        right_flank={params.right}
+        # Right flanking gene
+        if [[ ! -z $right_flank ]]; then
+            datasets download gene symbol {params.right} --taxon "{params.ref}" --include gene --filename {params.right}.zip || (echo "Warning: Download right flanking failed! Check if gene or sepecies is correct.")
+            unzip {params.right}.zip -d {params.right}
+            cat {params.right}/ncbi_dataset/data/gene.fna >> {output.temp}
+            rm -r {params.right}/ {params.right}.zip
+            echo "right:" {params.right} >> {output.info}
+            sleep 2
+        fi
+        
+        sed -E "s/ \\[.*//g;s/ /_/g" {output.temp} > {output.final}
+        echo "Complete download flanking gene"
+        """
+
+rule locate_flanking_genes:
+    input:
+        fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa",
+        flanks = "flanking_genes/{species}/{region}.fasta"
+    output:
+        sam = "map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.sam",
+        flank_region = "map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.txt"
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_1_map_flanking_genes.bench"
+    threads: 6
+    conda:
+        "../envs/minimap2.yaml"
+    shell:
+        """
+        minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam}
+        cut -f1-5 {output.sam} | grep -v "@" | awk '$3!="*"' > {output.flank_region}
+        echo "Mapped flanking gene to {wildcards.sample} {wildcards.hap}"
+        """
+
+checkpoint check_flanking_genes:
+    input:
+        loc = "map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.txt",
+        info = "flanking_genes/{species}/info_{region}.txt"
+    output:
+        status = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv",
+        tmp = temp("map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_status.tmp"),
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_2_check_flanking_genes.bench"
+    shell:
+        """
+        # Extract left and right flanking genes
+        left_flank=$(grep 'left' {input.info} | awk -F': ' '{{print $2}}' || true)
+        right_flank=$(grep 'right' {input.info} | awk -F': ' '{{print $2}}' || true)
+
+        # Initialize variables to track the contigs for left and right flanking gene
+        left_contigs=""
+        right_contigs=""
+
+        # Find contigs for left and right genes
+        while IFS=$'\t' read -r region_info _ contig position _; do
+            gene_name=$(echo $region_info | awk -F'_' '{{print $NF}}')
+
+            if [ "$gene_name" = "$left_flank" ]; then
+                left_contigs="$left_contigs $contig"
+            elif [ "$gene_name" = "$right_flank" ]; then
+                right_contigs="$right_contigs $contig"
+            fi
+        done < {input.loc}
+
+        # Remove duplicates from the contig lists
+        left_contigs=$(echo "$left_contigs" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+        right_contigs=$(echo "$right_contigs" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+
+        # Check if both flanking genes are found
+        if [ -n "$left_flank" ] && [ -n "$right_flank" ]; then
+            common_contigs=$(comm -12 <(echo "$left_contigs" | tr ' ' '\n' | grep -v '^$' | sort) <(echo "$right_contigs" | tr ' ' '\n' | grep -v '^$' | sort))
+            # Find unique contigs to the left
+            if [ -n "$common_contigs" ]; then
+                for contig in $common_contigs; do
+                    echo -e "flanks\tclosed\t$left_flank/$right_flank\t$contig" >> {output.tmp}
+                done
+            else
+                left_unique=$(comm -23 <(echo "$left_contigs" | tr ' ' '\n' | grep -v '^$' | sort) <(echo "$right_contigs" | tr ' ' '\n' | grep -v '^$' | sort)| tr '\n' ' ')
+                right_unique=$(comm -13 <(echo "$left_contigs" | tr ' ' '\n' | grep -v '^$' | sort) <(echo "$right_contigs" | tr ' ' '\n' | grep -v '^$' | sort)| tr '\n' ' ')
+
+                if [[ -z "$left_unique" && -z "$right_unique" ]]; then
+                    echo -e "flanks\tmissing\t*\t*" >> {output.tmp}
+                else
+                    echo -e "flanks\tfragmented\t$left_flank/$right_flank\t$left_unique/$right_unique" >> {output.tmp}
+                fi
+            fi
+        elif [ -n "$left_flank" ]; then
+            if [ -n "$left_contigs" ]; then
+
+                for contig in $left_contigs; do
+                    echo -e "telomere\tclosed\t$left_flank/\t$contig" >> {output.tmp}
+                done    
+            fi
+        elif [ -n "$right_flank" ]; then
+            if [ -n "$right_contigs" ]; then
+                for contig in $left_contigs; do
+                    echo -e "telomere\tclosed\t/$right_flank\t$contig" >> {output.tmp}
+                done
+            fi
+        fi
+        awk '!s[$0]++' {output.tmp} > {output.status}
+        echo "Checking {wildcards.region} flanking genes on {wildcards.sample} {wildcards.hap}"
+        """
+
+rule region_sam_to_sort_bam:
+    input:
+        sam = "map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.sam",
+    output:
+        bam = temp("map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.bam"),
+        sort = temp("map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes_sort.bam"),
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_3_sam_bam.bench"
+    conda:
+        "../envs/samtools.yaml"
+    shell:
+        """
+        samtools view -@ {threads} -bh {input.sam} > {output.bam}
+        samtools sort -@ {threads} -o {output.sort} {output.bam}
+        """
+
+rule region_intact_bed:
+    input:
+        sam = "map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes.sam",
+        bam = "map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_flank_genes_sort.bam",
+        status = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv",
+    output:
+        bed = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_flanking_genes.bed",
+        bed_mod = temp("map_temp/{species}/{sample}/{region}/{sample}_{hap}_{ref}_{region}_coords.tmp"),
+        bed_final = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_region_coords.bed",
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_4_roi_bed.bench"
+    conda:
+        "../envs/bedtools.yaml"
+    shell:
+        """
+        # Convert to bed coords
+        bedtools bamtobed -i {input.bam} > {output.bed}
+
+        grep "closed" {input.status} |
+        while IFS='\t' read -r flank_region flank_status genes contig; do
+            if [[ "$flank_region" == "telomere" ]]; then
+                # Can there be + and - strands together?
+                strand=$(awk -v var="$contig" '$1==var {{print $6}}' {output.bed} | awk '!s[$0]++')
+                echo $flank_region $flank_status $genes $contig $strand
+                if [[ "$strand" == "+" ]]; then
+                    end_coord=$(grep ":$contig\t" {input.sam} | grep "@" | awk -F'LN:' '{{print $2}}')
+                    awk -v contig="$contig" -v endcoord="$end_coord" '$1==contig {{print $1"\t"$2"\t"endcoord"\t"$4"\t"$5"\t"$6}}' {output.bed} >> {output.bed_mod}
+                else
+                    awk '{{ print $1"\t0\t"$3"\t"$4"\t"$5"\t"$6}}' {output.bed} >> {output.bed_mod}
+                fi
+            else
+            # Process closed flank region 
+                # Smallest start and largest end
+                awk -v var="$contig" '$1==var' {output.bed} |
+                awk -v regin="{wildcards.region}" -F'\t' '{{
+                  if (!start[$1] || $2 < start[$1]) {{
+                    start[$1] = $2
+                    region[$1] = regin
+                    value[$1] = $5
+                    strand[$1] = $6
+                  }}
+                  if (!end[$1] || $3 > end[$1]) {{
+                    end[$1] = $3
+                  }}
+                }}
+                END {{
+                  for (key in start) {{
+                    print key "\t" start[key] "\t" end[key] "\t" region[key] "\t" value[key] "\t" strand[key]
+                  }}
+                }}' >> {output.bed_mod}
+            fi 
+        done
+        awk '!s[$2,$3]++' {output.bed_mod} > {output.bed_final}
+        echo "Extract region with the flanking gene for {wildcards.sample} {wildcards.hap}"
+        """
+
+rule region_intact_contig:
+    input:
+        bed = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_region_coords.bed",
+        fa = "results/{sample}/scaffolds/{sample}_hybridPN_denovo_{hap}_{ref}.fa",
+    output:
+        fa = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_intact.fa",
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_5_roi_contig.bench"
+    conda:
+        "../envs/bedtools.yaml"
+    shell:
+        """
+        bedtools getfasta -fi {input.fa} -bed {input.bed} -s | sed 's/:.*/_{wildcards.region}/g' > {output.fa}
+        echo "Extract intact {wildcards.region} region with the flanking genes for {wildcards.sample} {wildcards.hap}"
+        """
+
+rule library_format:
+    input:
+        lambda wildcards: check_library(wildcards.region, config['region'][wildcards.region].get('library'))
+    output:
+        "map_temp/{species}/{sample}/{region}/library/{species}_{region}_lib.fasta"
+    conda:
+        "../envs/rename.yaml"
+    shell:
+        """
+        python scripts/lib_format.py {input} | seqkit rmdup -s | sed 's/\\r//g' > {output}
+        """
+
+rule region_intact_minimap2:
+    input:
+        fa = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_intact.fa",
+        lib = "map_temp/{species}/{sample}/{region}/library/{species}_{region}_lib.fasta",
+    output:
+        "map_temp/{species}/{sample}/{region}/library/{sample}_{hap}_{ref}_{region}_intact.paf",
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_6_lib_maps_roi.bench"
+    params:
+        minimap2 = lambda wildcards: REGIONS[wildcards.region]['minimap2'],
+    threads: 6
+    conda:
+        "../envs/minimap2.yaml"
+    shell:
+        """
+        # mapping lib to region
+        minimap2 {params} -c -t {threads} {input.fa} {input.lib} > {output}
+        echo "Mapping {wildcards.region} to {wildcards.sample} {wildcards.hap}"
+        """
+
+rule region_intact_cigar_info:
+    input:
+        "map_temp/{species}/{sample}/{region}/library/{sample}_{hap}_{ref}_{region}_intact.paf",
+    output:
+        "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_gene_coords_paf.txt"
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_7_cigar_process.bench"
+    shell:
+        """
+        python scripts/cigar_digest2.py {input} {output}
+        echo "Processed paf file of {wildcards.sample} {wildcards.hap} for region {wildcards.region} {wildcards.hap}"
+        """
+
+rule region_intact_gene_blast:
+    input:
+        paf = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_gene_coords_paf.txt",
+        fa = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_intact.fa",
+        lib = lambda wildcards: REGIONS[wildcards.region]['library']
+    output:
+        "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_gene_coords_paf.blast",
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_8_gene_blast.bench"
+    log:
+        "results/{sample}/logs/07_{sample}_{hap}_{species}_{ref}_{region}_8_gene_blast.log"
+    threads: 10
+    conda:
+        "../envs/bbstools.yaml"
+    threads: 10
+    params:
+        blast = lambda wildcards: REGIONS[wildcards.region]['blast'],
+    shell:
+        """
+        python scripts/paf_blast.py -p {input.paf} -r {input.lib} -f {input.fa} -o {output} &> {log}
+        echo "Aligned {input.lib} to the intact {wildcards.region} region on {wildcards.sample} {wildcards.hap}."
+        """
+
+rule region_intact_join_blast_paf:
+    input:
+        info = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_gene_coords_paf.txt",
+        blast = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_gene_coords_paf.blast",
+    output:
+        "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_candidates.tsv"
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_9_blast_paf_merge.bench"
+    shell:
+        """
+        python scripts/blast_extraction.py -i {input.info} -b {input.blast} -o {output}
+        echo "Combined paf and blast files for {wildcards.region} region of {wildcards.sample} {wildcards.hap}"
+        """
+
+rule region_intact_filter:
+    input:
+        "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_candidates.tsv"
+    output:
+        "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_filter.tsv"
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_10_filter.bench"
+    shell:
+        """
+        python scripts/filter_query_ident.py -i {input} -o {output}
+        echo "Filter genes for {wildcards.region} region on sample {wildcards.sample} {wildcards.hap}"
+        """
+
+rule region_intact_accurate_coords:
+    input:
+        filtr = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_filter.tsv",
+        bed = "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_flanking_genes.bed",
+    output:
+        "results/{sample}/annotation/{region}/{hap}/intact/{sample}_{hap}_{species}_{ref}_{region}_final.tsv"
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_11_coords_correct.bench"
+    shell:
+        """
+        python scripts/coord_correction.py -b {input.bed} -f {input.filtr} -o {output}
+        """
+
+rule region_intact_figure:
+    input:
+        "results/{sample}/annotation/{region}/{hap}/intact/{sample}_{hap}_{species}_{ref}_{region}_final.tsv"
+    conda:
+        "../envs/dna_viewer.yaml"
+    output:
+        "results/{sample}/annotation/{region}/{hap}/intact/{sample}_{hap}_{species}_{ref}_{region}.svg"
+    params:
+        "results/{sample}/annotation/{region}/{hap}/intact/{sample}_{hap}_{species}_{ref}_{region}"
+    benchmark:
+        "results/{sample}/benchmarks/07_{sample}_{hap}_{species}_{ref}_{region}_12_figure.bench"
+    shell:
+        """
+        python scripts/dna_viewer_table.py -i {input} -o {params}
+        """
+
+rule fragment_region:
+    output:
+        touch("regions/{species}/{sample}/{region}/fragmented/{sample}_{hap}_{ref}_{region}.done")
+    shell:
+        """
+        echo "The region {wildcards.region} of sample {wildcards.sample} {wildcards.hap} was fragmented."
+        """
+
+rule missing_region:
+    output:
+        touch("regions/{species}/{sample}/{region}/missing/{sample}_{hap}_{ref}_{region}.done")
+
+def check_gaps(wildcards):
+    with checkpoints.check_flanking_genes.get(**wildcards).output[0].open() as f:
+        for line in f:
+            col1, col2, col3, col4 = line.strip().split("\t")
+            if col2 == "closed":
+                return "results/{sample}/annotation/{region}/{hap}/intact/{sample}_{hap}_{species}_{ref}_{region}.svg"
+            elif col2 == "fragmented":
+                return "regions/{species}/{sample}/{region}/fragmented/{sample}_{hap}_{ref}_{region}.done"
+            else:
+                return "regions/{species}/{sample}/{region}/missing/{sample}_{hap}_{ref}_{region}.done"
+
+rule region_annotation:
+    input:
+        check_gaps
+    output:
+        "results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_annotation.finish"
+    shell:
+        "cat {input} > {output}"
+
+rule annotation_done:
+    input:
+        expand("results/{{sample}}/annotation/{region}/{hap}/{{sample}}_{hap}_{{species}}_{{ref}}_{region}_annotation.finish", hap = ['hap1','hap2'], region = REGIONS)
+    output:
+        touch("results/{sample}/annotation/{sample}_{species}_{ref}_final_annotation.finish")
 
 rule filtered_raw_stats:
     input:
@@ -552,12 +1031,23 @@ rule filtered_raw_stats:
         cat {input} | sed '/file/d' | awk '{{print $1,$4,$5,$6,$7,$8}}' | sed 's/.*\\///g;s/,//g' >> {output}
         """
 
+rule prepare_report:
+    input:
+        "scripts/final_report_blank.Rmd"
+    output:
+        "results/{sample}/info/{sample}_report.Rmd"
+    shell:
+        """
+        cp {input} {output}
+        """
+
 rule full_report:
     input:
-        sc = "scripts/final_report_blank.Rmd",
+        sc = "results/{sample}/info/{sample}_report.Rmd",
         stats = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv",
         raw_stats = "results/{sample}/info/{sample}_filtered_reads_stats.txt",
-        annotate = "results/{sample}/info/annotated_{species}_{sample}_{ref}.txt",
+        annotate = "results/{sample}/annotation/{sample}_{species}_{ref}_final_annotation.finish",
+        busco = "results/{sample}/info/{sample}_vs_{ref}_busco.txt",
     output:
         html = "results/{sample}/info/{sample}_{ref}_{species}_report.html"
     conda:
@@ -568,32 +1058,16 @@ rule full_report:
         "results/{sample}/logs/{sample}_{ref}_{species}_report.log"
     shell:
         """
-        Rscript -e "rmarkdown::render('{input.sc}', output_dir = '{params}', output_file=paste0('{wildcards.sample}_{wildcards.ref}_{wildcards.species}','_report'), output_format='html_document',params=list(sample='{wildcards.sample}',reference='{wildcards.ref}'))" 2> {log}
+        Rscript -e "rmarkdown::render('{input.sc}', output_dir = '{params}', output_file=paste0('{wildcards.sample}_{wildcards.ref}_{wildcards.species}','_report'), output_format='html_document',params=list(subject='{wildcards.sample}',reference='{wildcards.ref}',species='{wildcards.species}'))" 2> {log}
         echo "Final report generated"
         """
 
-include:"../annotation/annotation_pipe.py"
 
-rule running_annotation:
-    input:
-        expand("regions/{{species}}/{{sample}}/{region}/flanking/{{sample}}_{hap}_{{ref}}_{region}_annotation.finish", region = REGIONS, hap = ["hap1","hap2"])
-    output:
-        "results/{sample}/info/annotated_{species}_{sample}_{ref}.txt"
-    shell:
-        """
-        # Processing the intermediate output
-        cat {input} > {output}
-        """
+
+
+
 
 onsuccess:
     shell("""
-        if [ -d "reference/ncbi_dataset/" ]; then
-            rm -rf reference/ncbi_dataset/
-        fi
-        if [ -f "reference/md5sum.txt" ]; then
-            rm reference/md5sum.txt
-        fi
-        if [ -f "reference/README.md" ]; then
-            rm reference/README.md
-        fi
+        echo "Complete analysis"
     """)

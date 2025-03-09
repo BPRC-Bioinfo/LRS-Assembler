@@ -1,11 +1,11 @@
 ---
 title: "LRS-Assember pipeline"
-author: "BPRC-CGR"
-date: "`r paste('Datum:', format(Sys.Date(), '%d-%m-%Y'))`"
-version: "0.1"
+date: "`r paste('Date:', format(Sys.Date(), '%d-%m-%Y'))`"
+version: "0.2"
 params:
-  sample: "sample"
+  subject: "subject"
   reference: "reference"
+  species: "species"
   chr: FALSE
 output:
   html_document:
@@ -26,112 +26,246 @@ options(scipen = 999)
 library(ggplot2)
 library(knitr)
 library(tidyverse)
-
+library(reticulate)
+library(kableExtra)
+library(htmltools)
 ```
 
-```{r setup_sample, echo = FALSE}
-subject <- params$sample
+```{r setup_subject, echo = FALSE}
+subject <- params$subject
 reference <- params$reference
-path = paste0("../results/",subject,"/info/")
-print (list.files(path))
-print (subject)
-print (reference)
+species <- params$species
+
+path = "./"
+benchmark_dir = "../benchmarks/"
+annotation_dir <- "../annotation"
+
+#print (list.files(benchmark_dir))
+#print (list.files())
+#print (subject)
+#print (reference)
 ```
 
+## General information
+
+Subject: `r subject`
+
+Species: `r species`
+
+Reference: `r reference`
+
+## Raw reads stats
 
 ```{r raw_reads, results = 'asis', echo = FALSE}
 raw_reads_path <- paste0(path,subject,"_filtered_reads_stats.txt")
 raw_reads <- read.delim(raw_reads_path, sep = " ")
-
 ```
-
-## Raw reads stats
-
 
 ```{r table, results = 'asis', echo = FALSE}
 kable(raw_reads, digits=2)
 ```
+
 
 ## Genome assembly
 
 
 ```{r genome_info, results = 'asis', echo = FALSE}
 genome_path <- paste0(path,subject,"_hybridPN_denovo_ntlink_ragtag_",reference,"_stats.csv")
-print (genome_path)
+
 genome_info <- read.delim(genome_path, sep = " ")
-rownames(genome_info) <- c("BUSCO completeness", "Contigs", "N50 contigs", "Scaffolds", "N50 scaffolds")
+
+rownames(genome_info) <- c("Contigs", "N50 contigs", "Scaffolds", "N50 scaffolds")
 
 kable(genome_info, digits=2)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+### BUSCO
 
-```{r pressure, echo=FALSE}
-benchmark_files <- list.files(path = paste0("../results/",subject,"/benchmarks/"), pattern = "*.bench", full.names = TRUE)
+```{r busco_info, results = 'asis', echo = FALSE}
+busco_path <- paste0(path,subject,"_vs_",reference,"_busco.txt")
 
-# Extract step number and name from file names
+busco_info <- read.delim(busco_path, sep = ",")
+
+# Get the column names dynamically (excluding the "Description" column)
+numeric_columns <- names(busco_info)[-1]
+
+# Create a new row for "Complete%"
+new_row <- data.frame(Description = "Complete%")
+
+# Calculate Complete% for each numeric column
+for (col in numeric_columns) {
+  complete_count <- busco_info[busco_info$Description == "Complete", col]
+  total_count <- busco_info[busco_info$Description == "Total", col]
+  complete_percentage <- (complete_count / total_count) * 100
+  new_row[col] <- paste0(format(round(complete_percentage, 3), nsmall = 3), "%") #format the percentage string
+}
+
+# Add the new row to the table
+busco_info <- rbind(busco_info, new_row)
+
+kable(busco_info)
+```
+
+```{r show_png, echo=FALSE, fig.cap="BUSCO", out.width = "50%", fig.align = "center"}
+busco_fig <- paste0(path,"compare_",subject,"_",reference,"_figure.png")
+knitr::include_graphics(busco_fig)
+```
+
+
+## Annotation
+
+
+```{r annotation, echo = FALSE}
+
+if (dir.exists(annotation_dir)) {
+  final_tsv_files <- list.files(annotation_dir, pattern = "_final\\.tsv$", full.names = TRUE, recursive = TRUE)
+
+  if (length(final_tsv_files) > 0) {
+    # Initialize empty vectors to store parsed information
+    sample_names <- character()
+    regions <- character()
+    haplotypes <- character()
+
+    # Loop through each file path and extract the desired information
+    for (file_path in final_tsv_files) {
+      # Extract the file name from the full path
+      file_name <- basename(file_path)
+
+      # Extract sample name
+      sample_name <- gsub("_.*", "", file_name)
+      sample_names <- c(sample_names, sample_name)
+      
+      region_parts <- strsplit(file_path, "/")[[1]]
+      region_index <- which(region_parts == "annotation") + 1
+      region <- region_parts[region_index]
+      regions <- c(regions, region)
+
+      # Extract haplotype (hap1 or hap2)
+      haplotype <- gsub(".*/(hap1|hap2)/.*", "\\1", file_path)
+      haplotypes <- c(haplotypes, haplotype)
+    }
+
+    # Create a data frame from the extracted information
+    result_df <- data.frame(
+      sample_name = sample_names,
+      region = regions,
+      haplotype = haplotypes,
+      file_path = final_tsv_files
+    )
+
+  } else {
+    cat("No matching files found in the 'annotation' directory.\n")
+  }
+
+} else {
+  cat("The 'annotation' directory does not exist at the specified location.\n")
+}
+```
+
+
+```{r results='asis'}
+
+# Loop through unique samples
+for (sample in unique(result_df$sample_name)) {
+  sample_data <- subset(result_df, sample_name == sample)
+
+  for (region in unique(sample_data$region)) {
+    cat(paste0("### Region: ", region, " {.tabset}\n"))
+
+    region_data <- subset(sample_data, region == region)
+
+    # Loop through unique haplotypes
+    for (haplotype in unique(region_data$haplotype)) {
+      cat(paste0("#### Haplotype: ", haplotype, "\n"))
+      cat("\n")
+      
+      annote_table <- region_data[region_data$haplotype == haplotype & region_data$region == region, ]$file_path
+      annote_image <- gsub("_final\\.tsv$", ".svg", annote_table)
+      
+      if (file.exists(annote_image)) {
+        cat(paste0("![](", annote_image, ")\n"))
+      } else {
+        cat(paste0("Image file not found: ", annote_image, "\n"))
+      }
+      
+      table_data <- read.table(annote_table, header = TRUE, sep = "\t")
+      table_data$contig <- NULL
+      print (knitr::kable(table_data))
+    }
+  }
+}
+```
+
+
+## Time and RAM usage
+
+
+```{r benchmarks, echo=FALSE, fig.align = "center"}
+benchmark_files <- list.files(path = benchmark_dir, pattern = "*.bench", full.names = TRUE)
+
 extract_step_info <- function(file) {
   file_name <- basename(file)
   step_num <- as.numeric(sub("^([0-9]+).*", "\\1", file_name))  # Extract the leading number (step_num)
-  sample_name <- sub("^[0-9]+_([^_]+)_.*\\.bench$", "\\1", file_name)  # Extract the sample name (text/number between the first and second underscores)
+  subject_name <- sub("^[0-9]+_([^_]+)_.*\\.bench$", "\\1", file_name)  # Extract the subject name (text/number between the first and second underscores)
   step_name <- sub("^[0-9]+_[^_]+_(.*)\\.bench$", "\\1", file_name)  # Extract the step name (everything after the second underscore)
-  return(data.frame(file = file, step_num = step_num, sample_name = sample_name, step_name = step_name, stringsAsFactors = FALSE))
+  return(data.frame(file = file, step_num = step_num, subject_name = subject_name, step_name = step_name, stringsAsFactors = FALSE))
 }
 
-
-# Create a data frame of all benchmark files with their step numbers and names
 benchmark_info <- map_dfr(benchmark_files, extract_step_info)
-# Read each file and add its corresponding step information
+
 benchmark_data <- benchmark_info %>%
   rowwise() %>%
   mutate(benchmark = list(read.table(file, header = TRUE, sep = "\t"))) %>%
   unnest(cols = c(benchmark)) %>%
   arrange(step_num)
 
-# Convert 'h:m:s' to seconds if applicable (replace with correct column name for time)
-convert_to_seconds <- function(time_str) {
-  time_parts <- as.numeric(strsplit(time_str, ":")[[1]])
-  return(time_parts[1] * 3600 + time_parts[2] * 60 + time_parts[3])
-}
-
-# Assuming 'h.m.s' is the time column and 'max_rss' is the peak RAM in the benchmark data
-benchmark_data <- benchmark_data %>%
-  mutate(duration_seconds = sapply(h.m.s, convert_to_seconds))
-
-
-# Group tasks by step number, and also add peak RAM
 grouped_data <- benchmark_data %>%
-  group_by(step_num, step_name) %>%
-  summarise(total_duration = sum(duration_seconds),
-            peak_ram = max(max_rss, na.rm = TRUE))
+  group_by(step_num) %>%
+  summarise(
+    total_duration = sum(s),
+    peak_ram = max(max_rss, na.rm = TRUE),
+    .groups = "keep"
+  )
 
-# Combine step_num and step_name into a single label
-grouped_data$step_label <- paste(grouped_data$step_num, grouped_data$step_name, sep = ": ")
+steps <- c(
+  "Fastq preparing",
+  "Genome assembling",
+  "Contig lengthening",
+  "Scaffolding",
+  "Whole genome annotation",
+  "Genome stats",
+  "Region annotation"
+)
 
-# Sort the data based on step_num
-grouped_data <- grouped_data[order(grouped_data$step_num), ]
+step_descriptions <- data.frame(
+  step_num = 1:length(steps), # Assuming step_num corresponds to the index
+  description = steps
+)
+
+grouped_data <- grouped_data %>%
+  left_join(step_descriptions, by = "step_num")
 
 # Convert total_duration to hours and peak_ram to GB
-grouped_data$total_duration <- grouped_data$total_duration / 3600  # Convert seconds to hours
+grouped_data$total_duration_hr <- grouped_data$total_duration / 3600  # Convert seconds to hours
 grouped_data$peak_ram <- grouped_data$peak_ram / 1024  # Convert MB to GB
 
 # Sort the data based on step_num
 grouped_data <- grouped_data[order(grouped_data$step_num), ]
 
-print (grouped_data)
+grouped_data <- grouped_data %>%
+  mutate(step_label = paste(step_num, description, sep = " - "))
 
-# Create the plot
 ggplot(grouped_data, aes(x = factor(step_label, levels = unique(step_label)))) +
-  geom_bar(aes(y = total_duration), stat = "identity", fill = "steelblue", alpha = 0.7) +
-  geom_line(aes(y = peak_ram / max(peak_ram) * max(total_duration), group = 1, color = "Peak RAM"), size = 1.5) +
-  geom_point(aes(y = peak_ram / max(peak_ram) * max(total_duration), color = "Peak RAM"), size = 3) +
+  geom_bar(aes(y = total_duration_hr, fill = "Duration (hours)"), stat = "identity", alpha = 0.7) + #Added fill aesthetic
+  geom_line(aes(y = peak_ram / max(peak_ram) * max(total_duration_hr), group = 1, color = "Peak RAM (GB)"), linewidth = 1.5) +
+  geom_point(aes(y = peak_ram / max(peak_ram) * max(total_duration_hr), color = "Peak RAM (GB)"), size = 3) +
   scale_y_continuous(
-    name = "Duration (seconds)",
-    sec.axis = sec_axis(~ . * max(grouped_data$peak_ram) / max(grouped_data$total_duration), name = "Peak RAM (MB)")
+    name = "Duration (hours)",
+    sec.axis = sec_axis(~ . * max(grouped_data$peak_ram) / max(grouped_data$total_duration_hr), name = "Peak RAM (GB)")
   ) +
-  labs(x = "Step Number and Name", color = "Metric") +
+  labs(x = "Time and RAM usage", color = "Metric", fill = "Metric") + #Added fill to labs
+  scale_fill_manual(values = c("steelblue")) + #added to fix the fill
   theme_minimal() +
   theme(
     axis.title.y.right = element_text(color = "red"),
@@ -139,4 +273,30 @@ ggplot(grouped_data, aes(x = factor(step_label, levels = unique(step_label)))) +
   )
 
 ```
+
+
+```{r duration}
+
+total_duration_sum <- sum(grouped_data$total_duration)
+total_duration_hours <- total_duration_sum / 3600
+
+# Calculate maximum peak RAM
+max_peak_ram <- max(grouped_data$peak_ram)
+
+```
+
+
+
+Total Duration (hours): `r total_duration_hours`
+
+
+Maximum Peak RAM: `r max_peak_ram`
+
+
+
+
+```{r}
+knitr::knit_exit()
+```
+
 
