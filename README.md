@@ -75,6 +75,8 @@ To evaluate the completeness of the genome assembly, a BUSCO analysis is perform
 - **Nanopore** and **PacBio**:
 The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. The ONT and PacBio reads do not need to be combined into a single file prior to starting the pipeline.
 
+[Short tutorial on how to modiy config file to run multiple samples.](tutorials/config_modify.md) 
+
 ### Run The Pipeline
 
 To execute the pipeline, ensure that the input data is placed in the specified directory and the variables in the configuration file are properly defined. Then, run the following command:
