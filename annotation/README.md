@@ -25,13 +25,13 @@ region:
     left_flank: "flanking gene"
     right_flank: "flanking gene"
     library: "/path/to/references.fasta" 
-    minimap2: "-cx splice:hq -G16k"
+    minimap2: "-x asm5"
     blast: "-word_size 7"
   Region2:
     left_flank: "flanking gene"
     right_flank: "flanking gene"
     library: "/path/to/references2.fasta"
-    minimap2: "-cx splice:hq -G16k"
+    minimap2: "-x splice:hq"
     blast: "-word_size 7"
 ```
 
@@ -44,32 +44,13 @@ If only one flanking gene is specified, the program will process the region from
 
 ### Library
 
-The library file requires a specific format to annotate the RIO, which includes the gene name and the length of the sequence.
-The expected format:
-
-```
->Gene|length
-```
-
-```
-# create environment for renaming your library
-conda env create -f ../envs/rename.yaml
-
-# Activate environment
-conda activate lib_prepare
-
-# Rename the sequences in the library to the required format
-python ../scripts/lib_format.py input_ibrary.fa output_library.fa
-
-# Validate the renamed library
-grep ">" output_library.fa
-```
-
-Specify the path to the reference library in the configuration file.
+Specify the path of the reference library in the configuration file.
+Duplicate records in the library will be removed.
 
 ## Prepare Input Files
 
 Create a directory named ```inputs``` and place your assembly or sequence files inside it.
+The program can detect and process `.fa` or `.fasta` files.
 
 ## Run the Annotation Tool
 
@@ -78,3 +59,5 @@ conda activate snakemake
 
 snakemake --use-conda 
 ```
+
+The final results can be found inside the `LRS-annotation` directory.
