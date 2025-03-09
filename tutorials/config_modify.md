@@ -1,17 +1,19 @@
-# Setup config file to run multiple samples
+## Setup config file to run multiple samples
 
 
-This is a short tutorial on how to modify your config file for running LRS-Assembler.
-If you are running multiple samples with the same settings, it is best to create a dedicated config file for them.
-Example for assembling multiple rhesus macaque genomes and annotate the LILR and KIR regions.
+This tutorial explains how to modify your configuration file to run LRS-Assembler with multiple samples.
+If you are running several samples with the same settings, it is advisable to create a dedicated configuration file for them.
+Below is an example for assembling multiple rhesus macaque genomes and annotating the LILR and KIR regions.
 
-Create a new config file
+### Create a new config file
+
+First, copy the existing configuration file to create a new one:
 
 ```
 cp configs/run-config.yaml configs/macaque.yaml
 ```
 
-Edit the file with your favorite text editor.
+Next, edit the new configuration file using your preferred text editor:
 
 
 ```
@@ -50,17 +52,25 @@ pacbio:
     - "/path/to/local/Sample_2/pacbio/bam1"
 ```
 
+### Editing the Snakemake File
+
+
 Edit the `scripts/Snakemake` file to load in the correct config file.
 
 ```
 nano scripts/Snakefile
 ```
 
+Ensure the following line is pointing to your new configuration file:
+
 ```
 configfile: "configs/macaque.yaml"
 ```
 
-Run the pipeline with:
+### Run the pipeline:
+
+To run the pipeline, use the following command:
+
 
 ```
 snakemake --cores <number_of_cores> -s scripts/Snakefile --use-conda
