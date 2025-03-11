@@ -63,16 +63,7 @@ for sample, pac_dir in config['pacbio'].items():
 
 rule all:
     input:
-#        expand("reference/{ref}.{ref_ext}", ref = REFERENCE, ref_ext = ['fna','gff','info']),
-#        expand("results/{sample}/scaffolds/ntlink/{sample}_hybridPN_denovo_ntlink.fasta", sample = SAMPLES),
-#        expand("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv", sample = SAMPLES, ref = REFERENCE)
-#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
-#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_annotation.finish", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
-#        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
         expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, species = SPECIES, ref = REFERENCE),
-#        expand("results/{sample}/annotation/{sample}_{species}_{ref}_final_annotation.finish", sample = SAMPLES, ref = REFERENCE, species = SPECIES)
-#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
-#        expand("regions/{species}/{sample}/{region}/flanking/{sample}_{hap}_{ref}_{region}_annotation.finish", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"])
 
 def check_library(region_name, library):
     library_path = Path(library)
@@ -1033,7 +1024,7 @@ rule filtered_raw_stats:
 
 rule prepare_report:
     input:
-        "scripts/final_report_blank.Rmd"
+        "scripts/final_report_blank2.Rmd"
     output:
         "results/{sample}/info/{sample}_report.Rmd"
     shell:
@@ -1047,7 +1038,7 @@ rule full_report:
         stats = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv",
         raw_stats = "results/{sample}/info/{sample}_filtered_reads_stats.txt",
         annotate = "results/{sample}/annotation/{sample}_{species}_{ref}_final_annotation.finish",
-        busco = "results/{sample}/info/{sample}_vs_{ref}_busco.txt",
+        busco = "results/{sample}/info/compare_{sample}_{ref}_figure.png",
     output:
         html = "results/{sample}/info/{sample}_{ref}_{species}_report.html"
     conda:
