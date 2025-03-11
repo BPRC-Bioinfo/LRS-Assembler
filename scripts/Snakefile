@@ -1024,7 +1024,7 @@ rule filtered_raw_stats:
 
 rule prepare_report:
     input:
-        "scripts/final_report_blank2.Rmd"
+        "scripts/final_report_blank.Rmd"
     output:
         "results/{sample}/info/{sample}_report.Rmd"
     shell:
