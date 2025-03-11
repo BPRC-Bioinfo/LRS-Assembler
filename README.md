@@ -26,10 +26,10 @@ The configuration file, located at ```configs/run-config.yaml```, must be update
 
 A config file looks like:
 ```
-species: "Macaca mulatta"
+species: "Scientific species name"
 reference:
-  GCF_003339765.1:
-    accession_number: "GCF_003339765.1"
+  Reference_name:
+    accession_number: "NCBI accession"
     genome: "/path/to/local/reference/genomic.fna"
     gff: "/path/to/local.gff"
     chr_info: "/path/to/local/chr_info_file"
@@ -74,6 +74,8 @@ To evaluate the completeness of the genome assembly, a BUSCO analysis is perform
 
 - **Nanopore** and **PacBio**:
 The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. The ONT and PacBio reads do not need to be combined into a single file prior to starting the pipeline.
+
+[Short tutorial on how to modiy config file to run multiple samples.](tutorials/config_modify.md) 
 
 ### Run The Pipeline
 
