@@ -357,7 +357,7 @@ rule region_intact_figure:
     conda:
         "../envs/dna_viewer.yaml"
     output:
-        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report.html"
+        "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report.svg"
     params:
         "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report"
     threads: 6
@@ -393,6 +393,7 @@ rule region_intact_report:
     input:
         markdown = "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}.Rmd",
         data = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_final.tsv",
+        figures = "LRS-annotation/{species}/{genome}/{region}/annotation/{genome}_{region}_report.svg",
 #        "figures/v2_{species}_{genome}_{region}.svg",
     output:
         html = "LRS-annotation/{species}/{genome}/{region}/{genome}_{region}_intact.html"
