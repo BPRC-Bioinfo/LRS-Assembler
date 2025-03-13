@@ -297,7 +297,6 @@ rule contigs_quast:
 
 rule ntlink_fasta:
     input:
-        quast = "results/{sample}/info/{sample}_hybridPN_denovo_quast/report.tsv",
         fa = "results/{sample}/intermediates/{sample}_hybridPN_denovo.fa",
     output:
         temp("results/{sample}/intermediates/ntlink/{sample}_hybridPN_denovo.fa")
