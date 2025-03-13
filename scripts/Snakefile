@@ -63,7 +63,16 @@ for sample, pac_dir in config['pacbio'].items():
 
 rule all:
     input:
+#        expand("reference/{ref}.{ref_ext}", ref = REFERENCE, ref_ext = ['fna','gff','info']),
+#        expand("results/{sample}/scaffolds/ntlink/{sample}_hybridPN_denovo_ntlink.fasta", sample = SAMPLES),
+#        expand("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv", sample = SAMPLES, ref = REFERENCE)
+#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
+#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_annotation.finish", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
+#        expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, ref = REFERENCE, species = SPECIES),
         expand("results/{sample}/info/{sample}_{ref}_{species}_report.html", sample = SAMPLES, species = SPECIES, ref = REFERENCE),
+#        expand("results/{sample}/annotation/{sample}_{species}_{ref}_final_annotation.finish", sample = SAMPLES, ref = REFERENCE, species = SPECIES)
+#        expand("results/{sample}/annotation/{region}/{hap}/{sample}_{hap}_{species}_{ref}_{region}_status.csv", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"]),
+#        expand("regions/{species}/{sample}/{region}/flanking/{sample}_{hap}_{ref}_{region}_annotation.finish", sample = SAMPLES, ref = REFERENCE, region = REGIONS, species = SPECIES, hap = ["hap1","hap2"])
 
 def check_library(region_name, library):
     library_path = Path(library)
@@ -271,7 +280,7 @@ rule contigs_quast:
     input:
         "results/{sample}/intermediates/{sample}_hybridPN_denovo.fa",
     output:
-        "results/{sample}/info/{sample}_hybridPN_denovo_quast/report.tsv"
+        "results/{sample}/info/{sample}_hybridPN_denovo_contig_quast.tsv"
     conda:
         "../envs/quast.yaml"
     benchmark:
@@ -281,6 +290,8 @@ rule contigs_quast:
     shell:
         """
         quast.py {input} -o {params}
+        mv {params}/report.tsv {output}
+        rm -r {params}
         echo "The rule contig_quast complete for sample {wildcards.sample}"
         """
 
@@ -498,7 +509,7 @@ rule scaffold_quast:
     input:
         "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa",
     output:
-        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/report.tsv"
+        "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_scaffold_quast.tsv"
     conda:
         "../envs/quast.yaml"
     benchmark:
@@ -508,6 +519,8 @@ rule scaffold_quast:
     shell:
         """
         quast.py {input} -o {params}
+        mv {params}/report.tsv {output}
+        rm -r {params}
         echo "Complete quast analysis of sample {wildcards.sample} scaffolds"
         """
 
@@ -529,7 +542,7 @@ checkpoint scaffold_busco:
     input:
         "results/{sample}/scaffolds/{sample}_hybridPN_denovo_ntlink_{ref}.fa"
     output:
-        busco_dir = directory("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/"),
+        directory("results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_busco/"),
     conda:
         "../envs/busco.yaml"
     log:
@@ -541,7 +554,7 @@ checkpoint scaffold_busco:
     threads: 20
     shell:
         """
-        busco -m genome -i {input} -o {output.busco_dir} -l {params} -c {threads} -f 2> {log}
+        busco -m genome -i {input} -o {output} -l {params} -c {threads} -f 2> {log}
         echo "Complete BUSCO analysis of sample {wildcards.sample} scaffolds"
         """
 
@@ -615,15 +628,15 @@ rule busco_compare:
 
 rule final_quast:
     input:
-        contig_quast = "reference/{ref}_quast/report.tsv",
-        scaffold_quast = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_quast/report.tsv"
+        contig_quast = "results/{sample}/info/{sample}_hybridPN_denovo_contig_quast.tsv",
+        scaffold_quast = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_{ref}_scaffold_quast.tsv"
     output:
         stats = "results/{sample}/info/{sample}_hybridPN_denovo_ntlink_ragtag_{ref}_stats.csv"
     benchmark:
         "results/{sample}/benchmarks/06_{sample}_hybridPN_{ref}_stats_collect.bench"
     shell:
         """
-        grep "Assembly" {input.contig_quast} | awk '{{print $2}}' > {output}
+        grep "Assembly" {input.contig_quast} | awk -F '\t' '{{print $2}}' | sed 's/hybridPN_denovo_/hifiasm/g' > {output}
         grep "contigs (>= 0 bp)" {input.contig_quast} | awk -F"\t" '{{print $2}}' >> {output}
         grep "N50" {input.contig_quast} | awk '{{print $2}}' >> {output}
         grep "contigs (>= 0 bp)" {input.scaffold_quast} | awk -F"\t" '{{print $2}}' >> {output}
