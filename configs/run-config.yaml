@@ -11,13 +11,13 @@ region:
     left_flank: "Flank1"
     right_flank: "Flank2"
     library: "/path/to/references/annotation.fasta" 
-    minimap2: "-cx splice:hq -G16k"
+    minimap2: "-x splice:hq"
     blast: "-word_size 7"
   Region2:
     left_flank: "Flank2"
     right_flank: "Flank2"
     library: "/path/to/references/annotation2.fasta" 
-    minimap2: "-cx splice:hq -G16k "
+    minimap2: "-x splice:hq"
     blast: "-word_size 7"
 nanopore:
   Sample_1:
