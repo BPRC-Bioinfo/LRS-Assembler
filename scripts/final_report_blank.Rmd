@@ -181,17 +181,21 @@ for (sample in unique(result_df$sample_name)) {
       cat("\n")
       
       annote_table <- region_data[region_data$haplotype == haplotype & region_data$region == region, ]$file_path
-      annote_image <- gsub("_final\\.tsv$", ".svg", annote_table)
       
-      if (file.exists(annote_image)) {
-        cat(paste0("![](", annote_image, ")\n"))
+      if (length(annote_table) > 0) {
+	      annote_image <- gsub("_final\\.tsv$", ".svg", annote_table)
+	      
+	      if (file.exists(annote_image)) {
+		      cat(paste0("![](", annote_image, ")\n"))
+                      table_data <- read.table(annote_table, header = TRUE, sep = "\t")
+                      table_data$contig <- NULL
+                      print (knitr::kable(table_data))
+	      } else {
+		      cat(paste0("Image file not found: ", annote_image, "\n"))
+	      }
       } else {
-        cat(paste0("Image file not found: ", annote_image, "\n"))
+	        cat(paste0("No data found for haplotype: ", haplotype, " and region: ", region, ".\n"))
       }
-      
-      table_data <- read.table(annote_table, header = TRUE, sep = "\t")
-      table_data$contig <- NULL
-      print (knitr::kable(table_data))
     }
   }
 }
