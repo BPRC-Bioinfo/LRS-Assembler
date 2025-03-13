@@ -549,7 +549,7 @@ checkpoint reference_busco:
     input:
         "reference/{ref}.fna"
     output:
-        "reference/{ref}_busco/",
+        directory("reference/{ref}_busco/"),
     conda:
         "../envs/busco.yaml"
     params:
