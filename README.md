@@ -127,4 +127,4 @@ If you encounter any issues with genome assembly or RIO extraction and annotatio
 
 ## Cite
 
-The manuscript detailing LRS-Assembler is currently in preparation.
+The manuscript detailing LRS-Assembler is currently under review.
