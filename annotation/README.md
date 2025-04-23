@@ -22,17 +22,19 @@ Like the assembly pipeline, the annotation tool also requires a configuration fi
 species: "scientific name species"
 region:
   Region1:
-    left_flank: "flanking gene"
-    right_flank: "flanking gene"
-    library: "/path/to/references.fasta" 
-    minimap2: "-x asm5"
-    blast: "-word_size 7"
+    left_flank: "Flanking gene"
+    left_flank_local: "/path/to/left.fasta"
+    right_flank: "Flanking gene"
+    right_flank_local: "/path/to/right.fasta"
+    cDNA_library: "/path/to/cDNA_reference.fasta" 
+    gDNA_library: "/path/to/gDNA_references.fasta"
+
   Region2:
-    left_flank: "flanking gene"
-    right_flank: "flanking gene"
-    library: "/path/to/references2.fasta"
-    minimap2: "-x splice:hq"
-    blast: "-word_size 7"
+    left_flank: "Flanking gene"
+    left_flank_local: "/path/to/left.fasta"
+    right_flank: "Flanking gene"
+    right_flank_local: "/path/to/right.fasta"
+    cDNA_library: "/path/to/cDNA_reference.fasta"
 ```
 
 ### Regions of Interest
@@ -45,6 +47,8 @@ If only one flanking gene is specified, the program will process the region from
 ### Library
 
 Specify the path of the reference library in the configuration file.
+You can specify cDNA and/or gDNA libraries.
+Only list the library that you have.
 Duplicate records in the library will be removed.
 
 ## Prepare Input Files

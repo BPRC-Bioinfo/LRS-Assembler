@@ -1,0 +1,6 @@
+name: gmap
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - gmap=2024.11.20

@@ -1,7 +1,7 @@
 ---
 title: "LRS-Assember annotation pipeline"
 date: "`r paste('Date:', format(Sys.Date(), '%d-%m-%Y'))`"
-version: "0.0.2"
+version: "0.0.7"
 params:
   sample: "sample"
   species: "species"
