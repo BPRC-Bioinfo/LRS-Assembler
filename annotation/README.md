@@ -1,25 +1,29 @@
-# LRS-Assembler - Annotation 
+# LRS-assembler - Standalone annotation tool 
 
-The annotation tool can be run independently of the assembly pipeline. This process requires an assembled genome or haplotype sequence, which will first be scanned for the presence of flanking genes. Once identified, the annotation process begins using the user-provided reference library.
+The annotation tool can be run independently of the assembly pipeline. 
+This process requires assembled genome or haplotype sequences, which will first be scanned for flanking genes. 
+Once identified, the annotation proceeds using the user-provided reference library.
 
-## Installation Guide
+## Installation
 
-To download the annotation tool, the repository can be cloned using the following command:
+To download the annotation tool, clone the repository using the following command:
 
 ```
 git clone git@github.com:BPRC-Bioinfo/LRS-Assembler.git
 ```
-And then navigate to the stand-alone annotation tool:
+
+Navigate to the stand-alone annotation tool directory:
+
 ```
 cd LRS-Assembler/annotation
 ```
 
-## Usage Guide
+## Usage
 
-Like the assembly pipeline, the annotation tool also requires a configuration file. A template for this file is available: ```configs/anno_run-config.yaml```
+The annotation tool, like the assembly pipeline, requires a configuration file. A template for this file is available at: ```configs/anno_run-config.yaml```
 
 ```
-species: "scientific name species"
+species: "scientific name of species"
 region:
   Region1:
     left_flank: "Flanking gene"
@@ -28,7 +32,6 @@ region:
     right_flank_local: "/path/to/right.fasta"
     cDNA_library: "/path/to/cDNA_reference.fasta" 
     gDNA_library: "/path/to/gDNA_references.fasta"
-
   Region2:
     left_flank: "Flanking gene"
     left_flank_local: "/path/to/left.fasta"
@@ -37,31 +40,43 @@ region:
     cDNA_library: "/path/to/cDNA_reference.fasta"
 ```
 
-### Regions of Interest
 
-Specify the name of your region of interest under ```region:```.
+### Regions of interest
 
-Provide the left and right flanking genes.
-If only one flanking gene is specified, the program will process the region from that gene to the end of the sequence.
+Rename ```Region1``` to the specific name of your region of interest.
+You can define multiple regions, each with distinct flanking genes and reference libraries.
+
+
+### Flanking genes
+
+Provide the names of the left and right flanking genes.
+The program will attempt to download these genes from NCBI for the specified scientific species. Alternatively, you can provide a local FASTA file for each flanking gene if preferred (in `.fasta` format).
 
 ### Library
 
-Specify the path of the reference library in the configuration file.
-You can specify cDNA and/or gDNA libraries.
-Only list the library that you have.
-Duplicate records in the library will be removed.
+Specify the file paths for your reference cDNA and/or gDNA libraries in the configuration file.
+Only include the paths for the libraries you intend to use.
+Duplicate records within the provided libraries will be automatically removed.
 
 ## Prepare Input Files
 
-Create a directory named ```inputs``` and place your assembly or sequence files inside it.
-The program can detect and process `.fa` or `.fasta` files.
+Create a directory named ```inputs``` and place your assembly or sequence files (in `.fa` or `.fasta` format) within it.
+Ensure that your sample files are named according to the following format:
+
+```
+{sample}_{hap}.fa or {sample}_{hap}.fasta
+```
+
+Where ```{sample}``` represents the name of your sample, and ```{hap}``` indicates the haplotype (e.g., hap1, hap2).
+This naming convention allows the program to group haplotypes belonging to the same sample in the final report.
+
 
 ## Run the Annotation Tool
 
 ```
 conda activate snakemake
 
-snakemake --use-conda 
+snakemake -c {core} --use-conda 
 ```
 
-The final results can be found inside the `LRS-annotation` directory.
+The final results can be found inside the `LRS-annotation` directory, which will contain a html report file.
