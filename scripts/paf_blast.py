@@ -29,7 +29,7 @@ def gene_group(paf_file):
 
         if ref_info is not None:
             groups.setdefault(ref_info, []).append((chr_start, chr_end, contig))
-
+    print (groups)
     return groups
 
 def blast_paf(groups, ref_file, fasta_file, threads, output_file):
@@ -82,7 +82,7 @@ def blast_paf(groups, ref_file, fasta_file, threads, output_file):
 
         try:
             with open(output_file, 'a') as outfile:
-                subprocess.run(["blastn", "-query", chr_region_fasta, "-db", single_ref_fasta, "-num_threads", threads, "-word_size", "7", "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore btop qlen slen"], stdout=outfile, check=True)
+                subprocess.run(["blastn", "-query", chr_region_fasta, "-db", single_ref_fasta, "-num_threads", threads, "-word_size", "7", "-task", "blastn" , "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore btop qlen slen"], stdout=outfile, check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error running blastn: {e}")
         except FileNotFoundError:

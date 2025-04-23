@@ -2,8 +2,7 @@
 Script combine blast results with paf file.
 
 Author: Giang & Jaimy
-Version: 0.0.4
-Date: 2025-02-21
+Version: 0.0.7
 """
 
 import pandas as pd
@@ -19,49 +18,60 @@ def parse_line(line):
         ref_end = int(rest[2])
         roi_start = int(rest[3])
         roi_end = int(rest[4])
+        strand = rest[9]
 
-        return ref_name, int(ref_length), ref_start, ref_end, roi_start, roi_end, rest
+        return ref_name, int(ref_length), ref_start, ref_end, roi_start, roi_end, strand, rest
     except ValueError:
-        return None, None, None, None, None, None, None,
+        return None, None, None, None, None, None, None, None
 
 def group_by_gene(info_df):
-    groups = {}
+    genes = {}
     
     for line in info_df:
-        ref_name, ref_length, ref_start, ref_end, roi_start, roi_end, original_line = parse_line(line)
+        ref_name, ref_length, ref_start, ref_end, roi_start, roi_end, strand, original_line = parse_line(line)
 
         if ref_name is not None:
-            groups.setdefault(ref_name, []).append((ref_length, ref_start, ref_end, roi_start, roi_end, original_line))
+            genes.setdefault(ref_name, []).append((ref_length, ref_start, ref_end, roi_start, roi_end, strand, original_line))
 
-    return groups
+    return genes
 
 def individual_gene(genes):
+
+    for gene, entries in genes.items():
+        genes[gene] = sorted(entries, key=lambda x: x[1])
+
     gene_groups = {}
 
     for ref_name, group_lines in genes.items():
         if ref_name is not None:
-            current_ref_start = None
-            subgroup = 0
             gene_groups[ref_name] = {}
+            subgroup = 0  
+            
+            for strand in ['+', '-']:
+                strand_lines = [line for line in group_lines if line[5] == strand]
+                if not strand_lines:
+                    continue 
 
-            for i, (length, ref_start_coord, ref_end_coord, roi_start_coord, roi_end_coord, original_line) in enumerate(group_lines):
-                if current_ref_start is None:
-                    current_ref_start = ref_start_coord
-                    current_ref_end = ref_end_coord
-                    subgroup += 1
-                    gene_groups[ref_name][subgroup] = [[original_line, 0 ,length]]
-                elif ref_start_coord == current_ref_start or ref_start_coord < current_ref_start:
-                    current_ref_end = ref_end_coord
-                    subgroup += 1
-                    gene_groups[ref_name][subgroup] = [[original_line, 0, length]]
-                else:
-                    if current_ref_end > ref_start_coord:
-                        overlap = current_ref_end - ref_start_coord
-                        gene_groups[ref_name][subgroup].append([original_line, overlap, length])
+                current_ref_start = None
+                for (length, ref_start_coord, ref_end_coord, roi_start_coord, roi_end_coord, current_strand, original_line) in strand_lines:
+                    if current_ref_start is None:
+                        current_ref_start = ref_start_coord
+                        current_ref_end = ref_end_coord
+                        subgroup += 1
+                        gene_groups[ref_name][subgroup] = [[original_line, 0, length]]
+                    elif ref_start_coord == current_ref_start or ref_start_coord < current_ref_start:
+                        current_ref_start = ref_start_coord
+                        current_ref_end = ref_end_coord
+                        subgroup += 1
+                        gene_groups[ref_name][subgroup] = [[original_line, 0, length]]
                     else:
-                        gene_groups[ref_name][subgroup].append([original_line, 0, length])
+                        if current_ref_end > ref_start_coord:
+                            overlap = current_ref_end - ref_start_coord
+                            gene_groups[ref_name][subgroup].append([original_line, overlap, length])
+                        else:
+                            gene_groups[ref_name][subgroup].append([original_line, 0, length])
+                        current_ref_start = ref_start_coord
 
-                current_ref_start = ref_start_coord
     return gene_groups
 
 def falls_within_largest(row, smallest_start, largest_end):
@@ -69,7 +79,7 @@ def falls_within_largest(row, smallest_start, largest_end):
     end_in_range = smallest_start < row[7] < largest_end
     return start_in_range and end_in_range
 
-def join_blast_data(gene_groups, blast_df):
+def merge_blast_data(gene_groups, blast_df):
 
     result_data = []
     for ref_name, group_lines in gene_groups.items():
@@ -95,13 +105,30 @@ def join_blast_data(gene_groups, blast_df):
                         blast_percent, blast_align, blast_mismatch, blast_gap, blast_ref_start, blast_ref_end, blast_roi_start, blast_roi_end = row[2:10]
                         overlap_sum = 0
                     else:
-                        zero_evalue_rows = filtered_df[filtered_df[10] == 0].sort_values(by=6)
-                        smallest_start = zero_evalue_rows[6].min()
-                        largest_end = zero_evalue_rows[7].max()
+                        zero_evalue_rows = filtered_df[filtered_df[10] == 0].sort_values(by=6) # sort by ref start
+                        recorded_ranges = []
+                        keep_indices = []
 
-                        # Apply the filter to remove rows that fall strictly within the largest fragment
-                        within_coords_filter = zero_evalue_rows[~zero_evalue_rows.apply(falls_within_largest, axis=1, args=(smallest_start, largest_end))]
+                        for idx, row in zero_evalue_rows.iterrows():
+                            # Get the values from column 7 and 8 (1-indexed) i.e. columns 6 and 7 (0-indexed)
+                            start_val = row.iloc[6]
+                            end_val = row.iloc[7]
+                            
+                            current_range = (start_val, end_val)
+                            remove = False
+                            # Check if current_range is within any previously recorded range
+                            for rec in recorded_ranges:
+                                if current_range[0] >= rec[0] and current_range[1] <= rec[1]:
+                                    remove = True
+                                    break
+                            # If not contained in any previous range, record it and keep the row
+                            if not remove:
+                                recorded_ranges.append(current_range)
+                                keep_indices.append(idx)
 
+                        # Create a new DataFrame with only the rows we want to keep
+                        within_coords_filter = zero_evalue_rows.loc[keep_indices].reset_index(drop=True)
+                        
                         blast_percent = within_coords_filter[2].mean()
                         blast_ref_start, blast_ref_end = None, None
                         blast_overlap = []
@@ -115,16 +142,15 @@ def join_blast_data(gene_groups, blast_df):
                                 blast_ref_end = current_blast_ref_end
                             else:
                                 if current_blast_ref_start < blast_ref_end:
-                                    difference = blast_ref_end - current_blast_ref_start
+                                    difference = blast_ref_end - (current_blast_ref_start - 1)
                                     blast_overlap.append(difference)
                             blast_ref_start = current_blast_ref_start
                             blast_ref_end = current_blast_ref_end
 
-                        overlap_sum = 0 if not blast_overlap else sum(blast_overlap)
-                        blast_align = (within_coords_filter[7] - within_coords_filter[6] - 1).sum()
+                        overlap_sum = 0 if not blast_overlap else sum(blast_overlap) 
+                        blast_align = (within_coords_filter[7] - (within_coords_filter[6] - 1)).sum() - overlap_sum 
                         blast_mismatch, blast_gap = within_coords_filter[4].sum(), within_coords_filter[5].sum()
 
-                    blast_hits = len(filtered_df)
                     blast_percent = float(blast_percent)
                     blast_align = int(blast_align)
                     blast_overlap = int(overlap_sum)
@@ -143,12 +169,10 @@ def join_blast_data(gene_groups, blast_df):
                     "minimap_deletions": int(minimap_deletions),
                     "minimap_overlap": int(minimap_overlap),
                     "strand": strand,
-                    "blast_hits": blast_hits,
-                    "blast_percent": blast_percent,
-                    "blast_align": blast_align,
-                    "blast_overlap": blast_overlap,
-                    "blast_mismatch": blast_mismatch,
-                    "blast_gap": blast_gap,
+                    "percent": blast_percent,
+                    "align": blast_align,
+                    "mismatch": blast_mismatch,
+                    "gap": blast_gap,
                     "contig": contig,
                     "ref_len": int(seq_len)
                 })
@@ -156,79 +180,83 @@ def join_blast_data(gene_groups, blast_df):
     paf_blast_df = pd.DataFrame(result_data)
     paf_blast_df = paf_blast_df.sort_values('roi_start')
 
-    paf_blast_regroup_df = paf_blast_df.sort_values(['ref_name', 'gene_group', 'ref_start']).reset_index(drop=True)
-    new_group = paf_blast_regroup_df['gene_group'].max() + 1
+    return paf_blast_df
 
-    prev = None
-    # Regroup if fragments larger than 70%
-    # Maybe do condition if total fragments is larger than 150%
-    for idx, row in paf_blast_regroup_df.iterrows():
-        if prev is not None:
-            if row['ref_name'] == prev['ref_name'] and row['gene_group'] == prev['gene_group']:
-                if row['roi_start'] != prev['roi_end']:
-                    blast_align_val = row['blast_align'] if pd.notna(row['blast_align']) else 0
-                    # Threshold for splitting gene group is 0.7
-                    if (blast_align_val / row['ref_len']) > 0.7:
-                        paf_blast_regroup_df.at[idx, 'gene_group'] = new_group
-                        paf_blast_regroup_df.at[idx, 'minimap_overlap'] = 0
-                        new_group += 1
-        prev = row
-
-    return paf_blast_regroup_df
-
-def process_individual_gene(paf_blast_df):
-    final_data = []
+def regroup_genes(paf_blast_df):
+    clusters_list = []
+    sum_cols = ['minimap_matches', 'minimap_inserts', 'minimap_deletions',
+                'minimap_overlap', 'align', 'mismatch', 'gap']
+    
     for (ref_name, gene_group), group in paf_blast_df.groupby(['ref_name', 'gene_group']):
-        sorted_group = group.sort_values(by='ref_start')
+        current_cluster = []
+        
+        if len(group) == 1:
+            for idx, row in group.iterrows():
+                current_cluster.append(row.copy())
+            clusters_list.append(current_cluster)
+        else:
+            strand = group.iloc[0]['strand']
+            if strand == '-':
+                merge_condition = lambda last, curr: last['ref_start'] > curr['ref_end']
+                boundary_field = 'ref_start'
+            else:
+                merge_condition = lambda last, curr: last['ref_end'] < curr['ref_start']
+                boundary_field = 'ref_end'
+            
+            for idx, row in group.iterrows():
+                row = row.copy()
+                if not current_cluster:
+                    current_cluster.append(row)
+                else:
+                    last_row = current_cluster[-1]
+                    if merge_condition(last_row, row):
+                        last_row[boundary_field] = row[boundary_field]
+                        last_row['roi_end'] = row['roi_end']
+                        for col in sum_cols:
+                            last_row[col] += row[col]
+                        last_row['percent'] = (last_row['percent'] + row['percent']) / 2
+                        current_cluster[-1] = last_row
+                    else:
+                        clusters_list.append(current_cluster)
+                        current_cluster = [row]
+            if current_cluster:
+                clusters_list.append(current_cluster)
+    
+    merged_rows = [cluster[-1] for cluster in clusters_list]
+    regroup_genes = pd.DataFrame(merged_rows)
 
-        ref_start_fin = sorted_group['ref_start'].iloc[0]
-        ref_end_fin = sorted_group['ref_end'].iloc[-1]
-        roi_start_fin = sorted_group['roi_start'].iloc[0]
-        roi_end_fin = sorted_group['roi_end'].iloc[-1]
-        strand = sorted_group['strand'].iloc[0]
-        ref_len = sorted_group['ref_len'].iloc[0]
-        contig = sorted_group['contig'].iloc[0]
+    return regroup_genes
 
-        minimap_matches_fin = sorted_group['minimap_matches'].sum()
-        minimap_inserts_fin = sorted_group['minimap_inserts'].sum()        
-        minimap_deletions_fin = sorted_group['minimap_deletions'].sum()
-        minimap_overlap_fin = sorted_group['minimap_overlap'].sum()
+def rename_group(regrouped_genes):
+    regrouped_genes = regrouped_genes.drop('minimap_overlap', axis = 1)
+    updated_df = regrouped_genes.copy()
+    for ref_name, ref_group in regrouped_genes.groupby("ref_name"):
 
-        num_nan_rows = sorted_group['blast_percent'].isna().sum()
-        blast_percent_fin = sorted_group['blast_percent'].dropna().mean()
-        blast_align_fin = sorted_group['blast_align'].dropna().sum() - sorted_group['minimap_overlap'].dropna().sum() - sorted_group['blast_overlap'].dropna().sum()
-        blast_align_percent_fin = blast_align_fin / ref_len * 100
-        blast_mismatch_fin = sorted_group['blast_mismatch'].dropna().sum()
-        blast_gap_fin = sorted_group['blast_gap'].dropna().sum()
+        current_max = ref_group["gene_group"].max()
+        
+        for gene_group, group in ref_group.groupby("gene_group"):
+            if len(group) > 1:
+                for i, idx in enumerate(group.index):
+                    if i > 0:
+                        current_max += 1
+                        updated_df.at[idx, "gene_group"] = current_max
+    
+    updated_df["gene_group"] = updated_df.apply(
+        lambda row: f"{row['ref_name'].split('|')[0]}_group{row['gene_group']}|{row['ref_len']}",
+        axis=1
+    )
 
-        final_data.append({
-            "gene_group": f"{ref_name.split('|')[0]}_group{gene_group}|{ref_len}",
-            "ref_name": ref_name,
-            "ref_start": int(ref_start_fin),
-            "ref_end": int(ref_end_fin),
-            "roi_start": int(roi_start_fin),
-            "roi_end": int(roi_end_fin),
-            "minimap_matches": int(minimap_matches_fin),
-            "minimap_inserts": int(minimap_inserts_fin),
-            "minimap_deletions": int(minimap_deletions_fin),
-            "minimap_overlap": int(minimap_overlap_fin),
-            "strand": strand,
-            "blast_percent": f"{blast_percent_fin:.3f}",
-            "blast_align": f"{blast_align_percent_fin:.3f}",
-            "blast_mismatch": int(blast_mismatch_fin),
-            "blast_gap": int(blast_gap_fin),
-            "contig": contig,
-            "ref_len": int(ref_len)
-        })
+    updated_df = updated_df.sort_values('roi_start')
 
-    paf_blast_final = pd.DataFrame(final_data)
-    paf_blast_final = paf_blast_final.sort_values('roi_start')
-    return paf_blast_final
+    return updated_df
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process info and blast files.")
     parser.add_argument("-i", "--info", help="Path to the info file.")
     parser.add_argument("-b", "--blast", help="Path to the blast file.")
+    parser.add_argument("-l", "--lib", help="Library either cDNA or gDNA")
     parser.add_argument("-o", "--output", default="output.txt", help="Path to the output file.")
     args = parser.parse_args()
 
@@ -248,109 +276,10 @@ if __name__ == "__main__":
 
     genes = group_by_gene(lines)
     multiple_genes = individual_gene(genes)
-    paf_blast_df = join_blast_data(multiple_genes, blast_df)
-    genes_paf_blast = process_individual_gene(paf_blast_df)
-
-#    print (genes_paf_blast)
-    genes_paf_blast.to_csv(args.output, sep="\t", index=False)
-
-
-'''
-#    print (paf_blast_regroup_df[paf_blast_regroup_df['ref_name'].str.contains("LILRB2-like_4-1-1")])
-#    print (genes_paf_blast[genes_paf_blast['ref_name'].str.contains("LILRB2-like_2-1-1")])
+    paf_blast_df = merge_blast_data(multiple_genes, blast_df)
+    similar_join = regroup_genes(paf_blast_df)
+    final_genes_paf_blast = rename_group(similar_join)
+#    print (final_genes_paf_blast.to_string())
+    final_genes_paf_blast.to_csv(args.output, sep="\t", index=False)
 
 
-
-    paf_blast_df = pd.DataFrame(result_data)
-    paf_blast_df = paf_blast_df.sort_values('roi_start')
-    print (paf_blast_df.to_string())
-
-# Method1
-
-    grouped = paf_blast_df.groupby('ref_name')
-
-    for ref_name, group_df in grouped:
-        if len(group_df) > 1 and group_df.duplicated(subset=['gene_group'], keep=False).any():
-            print(f"ref_name: {ref_name}")
-
-            gene_group_sums = group_df.groupby('gene_group')['blast_align'].sum().reset_index()
-            merged_df = pd.merge(group_df, gene_group_sums, on='gene_group', suffixes=('', '_sum'))
-            merged_df['percentage'] = (merged_df['blast_align_sum'] / merged_df['ref_len']) * 100
-
-            over_150_df = merged_df[merged_df['percentage'] > 150].sort_values(by='roi_start') #Filter by 150%
-
-            if not over_150_df.empty:
-                print("Over 150%:")
-
-                current_group_num = over_150_df['gene_group'].max() + 1 #Start group number from 1
-
-                for i in range(len(over_150_df)):
-                    if i == 0:
-                        over_150_df.iloc[i, over_150_df.columns.get_loc('gene_group')] = str(current_group_num) #Assign the first group number
-                    else:
-                        current_row = over_150_df.iloc[i]
-                        last_row = over_150_df.iloc[i-1]
-
-                        if current_row['roi_start'] > last_row['roi_end']: #If no overlap
-                            current_group_num += 1 #Increment the group number
-                        over_150_df.iloc[i, over_150_df.columns.get_loc('gene_group')] = str(current_group_num) #Assign the new group number
-                        over_150_df = over_150_df.drop(columns=['blast_align_sum', 'percentage'])
-
-                print(over_150_df)
-                print("-" * 50)
-
-# Method2
-
-    paf_blast_regroup_df = paf_blast_df.sort_values(['ref_name', 'gene_group', 'ref_start']).reset_index(drop=True)
-    new_group = paf_blast_regroup_df['gene_group'].max() + 1
-
-    prev = None
-    # Regroup if fragments larger than 70%
-    # Maybe do condition if total fragments is larger than 150%
-    for idx, row in paf_blast_regroup_df.iterrows():
-        if prev is not None:
-            if row['ref_name'] == prev['ref_name'] and row['gene_group'] == prev['gene_group']:
-                if row['roi_start'] != prev['roi_end']:
-                    blast_align_val = row['blast_align'] if pd.notna(row['blast_align']) else 0
-                    # Threshold for splitting gene group is 0.7
-                    if (blast_align_val / row['ref_len']) > 0.7:
-                        paf_blast_regroup_df.at[idx, 'gene_group'] = new_group
-                        paf_blast_regroup_df.at[idx, 'minimap_overlap'] = 0
-                        new_group += 1
-        prev = row
-
-# Method 3
-    paf_blast_regroup_df = paf_blast_df.sort_values(['ref_name', 'gene_group', 'ref_start']).reset_index(drop=True)
-    new_group = paf_blast_regroup_df['gene_group'].max() + 1
-
-    prev = None
-    gene_group_sums = paf_blast_regroup_df.groupby('gene_group')['blast_align'].sum().reset_index()
-    merged_df = pd.merge(paf_blast_regroup_df, gene_group_sums, on='gene_group', suffixes=('', '_sum'))
-
-    # Calculate percentage for each row based on the total alignment for that gene group
-    merged_df['percentage'] = (merged_df['blast_align_sum'] / merged_df['ref_len']) * 100
-
-    # Filter by percentage greater than 150%
-    over_150_df = merged_df[merged_df['percentage'] > 150].sort_values(by='roi_start')
-
-    # Loop through the rows and split groups based on the condition
-    for idx, row in over_150_df.iterrows():
-        if prev is not None:
-            # Check if we are still in the same ref_name and gene_group
-            if row['ref_name'] == prev['ref_name'] and row['gene_group'] == prev['gene_group']:
-                # Check if the current start is not overlapping with the previous end
-                if row['roi_start'] > prev['roi_end']:
-                    # Condition to split based on the percentage of blast_align (using 70% as threshold)
-                    if (row['blast_align'] / row['ref_len']) > 0.7:
-                        over_150_df.at[idx, 'gene_group'] = new_group
-                        over_150_df.at[idx, 'minimap_overlap'] = 0
-                        new_group += 1
-        prev = row
-
-    # Drop unnecessary columns (like in Method 1)
-    over_150_df = over_150_df.drop(columns=['blast_align_sum', 'percentage'])
-
-    print(over_150_df)
-
-    return paf_blast_regroup_df
-'''
