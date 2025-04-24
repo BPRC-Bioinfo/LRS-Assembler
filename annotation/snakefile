@@ -43,7 +43,7 @@ def check_library(region_name, library):
     if library :
         library_path = Path(library)
         if not library_path.is_file():
-            print(f"Error: Library file not found at {library} for region {region_name} in species {species}")
+            print(f"Error: Library file not found at {library} for {region_name} region.")
             sys.exit(1)
         return library
     else:
