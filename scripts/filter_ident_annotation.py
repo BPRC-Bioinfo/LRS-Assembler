@@ -24,6 +24,7 @@ def filter_blast_and_ref_len(df):
 def cluster_overlaps_per_strand(df_best_hits):
     clusters_by_strand = {}
     
+    # Could be here with groupby contigs.
     for strand, group in df_best_hits.groupby('strand'):
         group_sorted = group.sort_values('roi_start').reset_index(drop=True)
 
@@ -236,6 +237,9 @@ def process_hits(hits):
         # Recurse on the remaining hits.
         result.extend(process_hits(remaining))
         return result
+
+# This function could be combined when pass lib type in 
+# Check what is going on per example
         
 def filtering_best_hits_gDNA(clusters_by_strand):
     filtered_clusters = {}
