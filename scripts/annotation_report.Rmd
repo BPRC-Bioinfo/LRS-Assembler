@@ -54,7 +54,7 @@ summary_file = paste0(sample,"_summary.txt")
 regions_status <- read.csv(summary_file, header = F, sep = " ")
 
 colnames(regions_status) <- c("Sample","Hap","Region","Lib","Status")
-regions_status <- regions_status[regions_status$Status == "annotated",]
+#regions_status <- regions_status[regions_status$Status == "annotated",]
 ```
 
 ```{r annotation, results='asis'}
@@ -66,30 +66,46 @@ for (region in sort(unique(regions_status$Region))) {
   for (hap in sort(unique(regions_annotation$Hap))) {
     cat(paste0("#### Haplotype: ", hap, "\n"))
     regions_hap <- subset(regions_annotation, Hap == hap)
-    
     for (lib in sort(unique(regions_hap$Lib))) {
       cat(paste0("##### ", lib, "\n"))
-      annote_image <- paste0(region,"/annotation/",sample,"_",hap,"_",region,"_report_",lib,".svg")
-      if (file.exists(annote_image)) {
-        cat(paste0("![](", annote_image, ")\n"))
-      } else {
-        cat(paste0("Image file not found: ", annote_image, "\n"))
+      regions_hap_annotate <- subset(regions_hap, Lib == lib)
+      if (regions_hap_annotate$Status == "annotated"){
+        annote_image <- paste0(region,"/annotation/",sample,"_",hap,"_",region,"_intact_report_",lib,".svg")
+        if (file.exists(annote_image)) {
+          cat(paste0("![](", annote_image, ")\n"))
+        } else {
+          cat(paste0("Image file not found: ", annote_image, "\n"))
+        }
+        
+        csv_files = paste0(region,"/",sample,"_",hap,"_",region,"_intact_final_",lib,".csv")
+        if (file.exists(csv_files)) {
+          cat("\n")
+          annotation_data <- read.csv(csv_files, sep = '\t', header = T)
+          contig <- unique(annotation_data$contig)
+          annotation_data$contig <- NULL
+          annotation_data$ref_name <- NULL
+          annotation_data <- kbl(annotation_data) %>%
+            kable_styling(bootstrap_options = c("striped", "hover","condensed", "responsive")) %>%
+            scroll_box(width = "100%", height = "200px")
+          print (annotation_data)
+          cat("\n")
+          cat(paste0("Region found in scaffold: ", contig, "\n" ))
+          cat("\n")
+        } else {
+          cat(paste0("CSV file not found: ", csv_files, "\n"))
+        }
       }
-      
-      csv_files = paste0(region,"/",sample,"_",hap,"_",region,"_final_",lib,".csv")
-      annotation_data <- read.csv(csv_files, sep = '\t', header = T)
-      print (knitr::kable(annotation_data))
-    
     }
   }
-#  print (regions_annotation)
-#  final_csv_files <- list.files(region, pattern = paste0(".*", region, ".*final.*\\.csv$"), full.names = TRUE, recursive = TRUE)
-#  print (final_csv_files)
-
 }
 
 ```
 
+
+
+
+
+LRS-annotation version 0.0.8
 
 ```{r}
 knitr::knit_exit()

@@ -66,14 +66,14 @@ wildcard_constraints:
 
 rule all:
     input:
-        expand(
-            "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv", zip, 
-            species=run_df['Species'], region=run_df['Region'], sample=run_df['Samples'], hap=run_df['Hap']
-        ),
-        expand(
-            "LRS-annotation/{species}/{sample}/{sample}_report.html",
-            species=SPECIES, sample=run_df['Samples'].unique())
-
+#        expand(
+#            "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv", zip, 
+#            species=run_df['Species'], region=run_df['Region'], sample=run_df['Samples'], hap=run_df['Hap']
+#        ),
+#        expand(
+#            "LRS-annotation/{species}/{sample}/{sample}_report.html",
+#            species=SPECIES, sample=run_df['Samples'].unique())
+        expand("LRS-annotation/{species}/{sample}/{sample}_report.html", species = SPECIES, sample = run_df['Samples']),
 
 rule prepare_flanking_genes:
     output:
@@ -358,7 +358,7 @@ rule roi_region_filter:
         "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_{roi}_final_{i}"
     shell:
         """
-        python ../scripts/filter_ident_annotation.py -i {input} -l {wildcards.i} -o {params}
+        python ../scripts/filter_ident_annotation2.py -i {input} -l {wildcards.i} -o {params}
         """
 
 rule remapping_flanking_genes_intact:

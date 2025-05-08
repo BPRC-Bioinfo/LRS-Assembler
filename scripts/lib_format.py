@@ -22,8 +22,15 @@ with open(args.input_fasta, "r") as infile:
     for record in SeqIO.parse(infile, "fasta"):
         record.seq = record.seq.replace("-", "")
         seq_length = len(record.seq)
+        
+        record.id = record.id.split(" ")[0]
         parts = record.id.split("|")
-
+        
+        if record.id.count('|') > 1:
+            parts = record.id.rsplit('|', 1)
+            parts[0] = parts[0].replace('|', '_')
+            record.id = '|'.join(parts)
+            
         if len(parts) > 1 and parts[-1].isdigit() and int(parts[-1]) == seq_length:
 
             SeqIO.write(record, sys.stdout, "fasta")

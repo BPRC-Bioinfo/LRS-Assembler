@@ -110,9 +110,9 @@ def gmap_to_dataframe(data_dict):
     df = df.reset_index().rename(columns={'index': 'ref_name'})
 
     temp = df['ref_name'].str.split(r'\|', expand=True)
-    
+
     df['gene_group'] = temp[0].astype(str) + "_group" + df['gene_number'].astype(str)
-    df['ref_len'] = temp[1].astype(int)
+    df['ref_len'] = temp.iloc[:, -1].astype(int)
 
     df = df.drop('gene_number', axis=1)
     df = df.sort_values('roi_start')
