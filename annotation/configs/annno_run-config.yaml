@@ -1,4 +1,5 @@
 species: "scientific species name"
+reference: "/path/to/reference.fasta"
 region:
   Region1:
     left_flank: "Flanking gene"

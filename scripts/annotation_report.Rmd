@@ -57,7 +57,77 @@ colnames(regions_status) <- c("Sample","Hap","Region","Lib","Status")
 #regions_status <- regions_status[regions_status$Status == "annotated",]
 ```
 
+
 ```{r annotation, results='asis'}
+
+for (region in sort(unique(regions_status$Region))) {
+  cat(paste0("## Region: ", region, "{.tabset}\n\n"))
+  regions_annotation <- subset(regions_status, Region == region)
+  
+  for (hap in sort(unique(regions_annotation$Hap))) {
+    cat(paste0("### Haplotype: ", hap, "\n\n"))
+    regions_hap <- subset(regions_annotation, Hap == hap)
+    
+    for (lib in sort(unique(regions_hap$Lib))) {
+      cat(paste0("#### ", lib, "\n\n"))
+      regions_hap_annotate <- subset(regions_hap, Lib == lib)
+      
+      if (regions_hap_annotate$Status == "intacted"){
+        annote_image <- paste0(region, "/annotation/", sample, "_", hap, "_", region, "_intact_", lib, ".svg")
+        if (file.exists(annote_image)) {
+          cat(paste0("![](", annote_image, ")\n\n"))
+        } else {
+          cat(paste0("**Image file not found:** ", annote_image, "\n\n"))
+        }
+        
+#        csv_files <- paste0(region, "/", sample, "_", hap, "_", region, "_intact_final_", lib, ".csv")
+#        if (file.exists(csv_files)) {
+#          annotation_data <- read.csv(csv_files, sep = '\t', header = TRUE)
+#          annotation_data$contig <- NULL
+#          annotation_data$ref_name <- NULL
+          
+#          table_html <- kbl(annotation_data) %>%
+#            kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+#            scroll_box(width = "100%", height = "200px")
+          
+#          print(table_html)
+#          cat("\n\n")
+          
+#        } else {
+#          cat(paste0("**CSV file not found:** ", csv_files, "\n\n"))
+#        }
+      } else if (regions_hap_annotate$Status == "scaffolded") {
+        annote_image <- paste0(region, "/annotation/", sample, "_", hap, "_", region, "_fragmented_", lib, ".svg")
+        if (file.exists(annote_image)) {
+          cat(paste0("![](", annote_image, ")\n\n"))
+        } else {
+          cat(paste0("**Image file not found:** ", annote_image, "\n\n"))
+        }
+      }
+      
+      cat("\n")
+    }
+    cat("\n")
+  }
+  cat("\n\n")
+}
+
+# Final text clearly separated from any tabset
+#cat("\n---\n")
+#cat("**LRS-annotation version 0.0.8**\n")
+```
+
+```{r}
+knitr::knit_exit()
+```
+
+
+
+
+
+
+
+```{r annotation_wrong, results='asis'}
 
 for (region in sort(unique(regions_status$Region))) {
   cat(paste0("### Region: ", region, " {.tabset}\n"))
@@ -81,7 +151,6 @@ for (region in sort(unique(regions_status$Region))) {
         if (file.exists(csv_files)) {
           cat("\n")
           annotation_data <- read.csv(csv_files, sep = '\t', header = T)
-          contig <- unique(annotation_data$contig)
           annotation_data$contig <- NULL
           annotation_data$ref_name <- NULL
           annotation_data <- kbl(annotation_data) %>%
@@ -89,12 +158,12 @@ for (region in sort(unique(regions_status$Region))) {
             scroll_box(width = "100%", height = "200px")
           print (annotation_data)
           cat("\n")
-          cat(paste0("Region found in scaffold: ", contig, "\n" ))
-          cat("\n")
         } else {
           cat(paste0("CSV file not found: ", csv_files, "\n"))
         }
       }
+
+      cat ("\n")
     }
   }
 }
@@ -102,14 +171,6 @@ for (region in sort(unique(regions_status$Region))) {
 ```
 
 
-
-
-
-LRS-annotation version 0.0.8
-
-```{r}
-knitr::knit_exit()
-```
 
 
 ```{r results='asis'}

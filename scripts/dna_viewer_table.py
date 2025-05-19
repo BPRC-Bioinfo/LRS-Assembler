@@ -1,4 +1,4 @@
-# v0.0.7
+# v0.0.8
 # By Giang Le & Jaimy
 
 import pandas as pd
@@ -19,7 +19,9 @@ def get_dna_viewer_plot(df_filtered: pd.DataFrame, output: str) -> dict:
         for _, row in df_filtered.iterrows():
             color = "#ffcccc"  # Default color
             if "Flanking gene" in row[4]:
-                color = "#ccffcc"  # Different color for flanking
+                color = "#ccffcc"
+            elif "N_gap" in row[3]:
+                color = "#61a2ff"
 
             features.append(
                 GraphicFeature(

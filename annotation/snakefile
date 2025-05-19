@@ -9,14 +9,22 @@ from glob import glob
 from pathlib import Path
 from multiprocessing import cpu_count
 
-configfile: "configs/annno_run-config.yaml"
+configfile: "annno_run-config.yaml"
 REGIONS = config["region"]
 SPECIES = config['species'].replace(" ", "_")
+REFERENCE = config['reference']
 
 fa_wcs = glob_wildcards("inputs/{sample}_{hap}.fa")
 fasta_wcs = glob_wildcards("inputs/{sample}_{hap}.fasta")
+fasta_gz_wcs = glob_wildcards("inputs/{sample}_{hap}.fasta.gz")
+fa_gz_wcs = glob_wildcards("inputs/{sample}_{hap}.fa.gz")
 
-GENOMES = list(set(zip(fa_wcs.sample, fa_wcs.hap)) | set(zip(fasta_wcs.sample, fasta_wcs.hap)))
+GENOMES = list(
+    set(zip(fa_wcs.sample, fa_wcs.hap)) |
+    set(zip(fasta_wcs.sample, fasta_wcs.hap)) |
+    set(zip(fasta_gz_wcs.sample, fasta_gz_wcs.hap)) |
+    set(zip(fa_gz_wcs.sample, fa_gz_wcs.hap))
+)
 
 haps_by_sample = {}
 for sample, hap in GENOMES:
@@ -31,6 +39,7 @@ run_df = pd.DataFrame(
 df_features = pd.DataFrame(REGIONS.keys(), columns=['Region'])
 run_df = run_df.merge(df_features, how='cross')
 run_df['Species'] = SPECIES
+print (run_df)
 
 FLANK_LOCAL = {}
 for region in REGIONS:
@@ -58,7 +67,15 @@ def check_library(region_name, library):
             sys.exit(1)
         return library
     else:
-            return "no_lib"
+        return "no_lib"
+
+def fasta_inputs(wc):
+    for ext in ["fa", "fa.gz", "fasta", "fasta.gz"]:
+        path = f"inputs/{wc.sample}_{wc.hap}.{ext}"
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(f"No fasta file found for {wc.sample}_{wc.hap}")
+
 
 wildcard_constraints:
     region = '|'.join(REGIONS)
@@ -66,14 +83,14 @@ wildcard_constraints:
 
 rule all:
     input:
-#        expand(
-#            "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv", zip, 
-#            species=run_df['Species'], region=run_df['Region'], sample=run_df['Samples'], hap=run_df['Hap']
-#        ),
-#        expand(
-#            "LRS-annotation/{species}/{sample}/{sample}_report.html",
-#            species=SPECIES, sample=run_df['Samples'].unique())
+        expand("LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv", zip,
+            species = run_df['Species'],
+            sample = run_df['Samples'],
+            hap = run_df['Hap'],
+            region = run_df['Region']
+            ),
         expand("LRS-annotation/{species}/{sample}/{sample}_report.html", species = SPECIES, sample = run_df['Samples']),
+
 
 rule prepare_flanking_genes:
     output:
@@ -99,7 +116,7 @@ rule prepare_flanking_genes:
         fi
         """
 
-rule flanking_genes_per_region:
+rule flanking_genes_in_region:
     input:
         flanks = lambda wc: [
             f"flanking_genes/{SPECIES}/{REGIONS[wc.region][key].strip()}.fasta"
@@ -115,7 +132,7 @@ rule flanking_genes_per_region:
 
 rule region_or_telomere:
     input:
-        "regions/{species}/{region}.fasta"
+        rules.flanking_genes_in_region.output
     output:
         "regions/{species}/{region}.info"
     params:
@@ -133,12 +150,8 @@ rule region_or_telomere:
 
 rule mapping_flanking_genes:
     input:
-        fa = lambda wc: (
-            "inputs/{sample}_{hap}.fa".format(**wc)
-            if os.path.exists("inputs/{sample}_{hap}.fa".format(**wc))
-            else "inputs/{sample}_{hap}.fasta".format(**wc)
-        ),
-        flanks = "regions/{species}/{region}.fasta",
+        fa = fasta_inputs,
+        flanks = rules.flanking_genes_in_region.output,
     output:
         sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_{region}.sam",
         flank_region = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_{region}.txt"
@@ -155,10 +168,10 @@ rule mapping_flanking_genes:
 
 checkpoint check_flanking_genes:
     input:
-        loc = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_{region}.txt",
-        info = "regions/{species}/{region}.info"
+        loc = rules.mapping_flanking_genes.output['flank_region'],
+        info = rules.region_or_telomere.output,
     output:
-        status = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv",
+        "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv",
     shell:
         """
         python ../scripts/check_flanking_genes.py -i {input.info} -l {input.loc} -o {output}
@@ -166,7 +179,7 @@ checkpoint check_flanking_genes:
 
 rule region_sam_to_bed:
     input:
-        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_{region}.sam",
+        sam = rules.mapping_flanking_genes.output['sam'],
     output:
         bam = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_{region}.bam"),
         sort = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_{region}_sort.bam"),
@@ -183,10 +196,10 @@ rule region_sam_to_bed:
 
 rule intact_region_coordinates:
     input:
-        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_flanking_genes_{region}.bed",
-        status = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv",
+        bed = rules.region_sam_to_bed.output['bed'],
+        status = rules.check_flanking_genes.output,
     output:
-        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_{region}_intact.bed",
+        "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_{region}_intact.bed",
     shell:
         """
         python ../scripts/bam2bed.py -s {input.status} -b {input.bed} -r {wildcards.region} -o {output}
@@ -194,12 +207,8 @@ rule intact_region_coordinates:
 
 rule intact_region_contig_extraction:
     input:
-        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_{region}_intact.bed",
-        fa = lambda wc: (
-            "inputs/{sample}_{hap}.fa".format(**wc)
-            if os.path.exists("inputs/{sample}_{hap}.fa".format(**wc))
-            else "inputs/{sample}_{hap}.fasta".format(**wc)
-        ),
+        bed = rules.intact_region_coordinates.output,
+        fa = fasta_inputs,
     output:
         "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact.fa",
     conda:
@@ -237,34 +246,6 @@ checkpoint libraries_format:
         fi
         """
 
-rule fragmented_region_coordinates:
-    input:
-        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_flanking_genes_{region}.bed",
-        status = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_{region}_status.csv",
-    output:
-        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_{region}_fragmented.txt",
-    shell:
-        """
-        python ../scripts/bam2bed.py -s {input.status} -b {input.bed} -r {wildcards.region} -o {output}
-        """
-
-rule fragmented_region_contig_extraction:
-    input:
-        contig = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_{region}_fragmented.txt",
-        fa = lambda wc: (
-            "inputs/{sample}_{hap}.fa".format(**wc)
-            if os.path.exists("inputs/{sample}_{hap}.fa".format(**wc))
-            else "inputs/{sample}_{hap}.fasta".format(**wc)
-        ),
-    output:
-        "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_fragmented.fa",
-    conda:
-        "../envs/seqkit.yaml"
-    shell:
-        """
-        seqkit grep -f {input.contig} {input.fa} -o {output}
-        """
-
 rule roi_region_cDNA_mapping:
     input:
         fa = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_{roi}.fa",
@@ -284,7 +265,7 @@ rule roi_region_cDNA_mapping:
 
 rule roi_region_parcing_gmap:
     input:
-        "map_temp/{species}/{region}/analysis/{sample}_{hap}_{region}_{roi}_cDNA.psl",
+        rules.roi_region_cDNA_mapping.output,
     output:
         "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_{roi}_candidates_cDNA.csv"
     log:
@@ -312,7 +293,7 @@ rule roi_region_gDNA_mapping:
 
 rule roi_region_cigar_info:
     input:
-        "map_temp/{species}/{region}/analysis/{sample}_{hap}_{region}_{roi}_gDNA.paf",
+        rules.roi_region_gDNA_mapping.output,
     output:
         "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_{roi}_coords_paf_gDNA.txt"
     shell:
@@ -340,8 +321,8 @@ rule roi_region_gene_blast:
 
 rule roi_region_join_blast_paf:
     input:
-        info = "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_{roi}_coords_paf_gDNA.txt",
-        blast = "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_{roi}_coords_paf_gDNA.blast",
+        info = rules.roi_region_cigar_info.output,
+        blast = rules.roi_region_gene_blast.output,
     output:
         "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_{roi}_candidates_gDNA.csv"
     shell:
@@ -358,15 +339,258 @@ rule roi_region_filter:
         "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_{roi}_final_{i}"
     shell:
         """
-        python ../scripts/filter_ident_annotation2.py -i {input} -l {wildcards.i} -o {params}
+        python ../scripts/filter_ident_annotation.py -i {input} -l {wildcards.i} -o {params}
         """
 
-rule remapping_flanking_genes_intact:
+rule roi_N_gaps_detect:
     input:
-        fa = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact.fa",
-        flanks = "regions/{species}/{region}.fasta",
+        fa = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_{roi}.fa",
     output:
-        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.sam",
+        fa = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_{roi}_N_coords.bed",
+    shell:
+        """ 
+        awk '
+          /^>/ {{
+            if (in_run) print id, rs, pos
+            id = substr($0,2); pos = 0; in_run = 0; next
+          }}
+          {{
+            for (i=1; i<=length($0); i++) {{
+              pos++
+              base = substr($0,i,1)
+              if (base=="N") {{
+                if (!in_run) {{ in_run=1; rs=pos }}
+              }} else if (in_run) {{
+                print id, rs, pos-1; in_run=0
+              }}
+            }}
+          }}
+          END {{ if (in_run) print id, rs, pos }}' \
+          {input.fa} | awk '{{ print $0, "N_gap",0, "-1"}}' | sed 's/ /\t/g' > {output}
+        """
+
+rule visual_intact_flanking_map:
+    input:
+        rules.region_sam_to_bed.output['bed'],
+    output:
+        "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_intact_remap_{region}.bed",
+    shell:
+        """
+        awk '{{ sub(/.*_/, "", $4); print $1"\t"$2"\t"$3"\t"$4"\tFlanking gene\t"$6 }}' {input} |\
+        awk '!s[$0]++' |\
+        awk '
+            BEGIN {{ FS=OFS = "\t" }}
+
+            # collect per‐key min(start) and max(end)
+            $5 == "Flanking gene" {{
+              key = $1 FS $4 FS $5 FS $6
+              if (!(key in mn) || $2 < mn[key]) mn[key] = $2
+              if (!(key in mx) || $3 > mx[key]) mx[key] = $3
+            }}
+
+            END {{
+              # 1) find the global minimum across all mn[key]
+              gmin = ""
+              for (k in mn)
+                if (gmin == "" || mn[k] < gmin)
+                  gmin = mn[k]
+
+              # 2) print each record, subtracting gmin from both start and end
+              for (k in mn) {{
+                split(k, a, FS)
+                # a[1]=ID, mn[k]-gmin=start−gmin, mx[k]-gmin=end−gmin, a[2]=gene, a[3]=type, a[4]=strand
+                print a[1], mn[k] - gmin, mx[k] - gmin, a[2], a[3], a[4]
+              }}
+            }}
+        ' > {output}
+        """        
+
+rule visual_intact_flanking_bed:
+    input:
+        bed = rules.visual_intact_flanking_map.output,
+        filtr = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact_final_{i}.bed",
+        n_gaps = rules.roi_N_gaps_detect.output
+    output:
+        visual_bed = "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_visual_{i}.bed"
+    shell:
+        """
+        cat {input} > {output}
+        """
+
+rule intact_region_figure:
+    input:
+        rules.visual_intact_flanking_bed.output,
+    conda:
+        "../envs/dna_viewer.yaml"
+    output:
+        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_{i}.svg"
+    params:
+        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_{i}"
+    threads: 6
+    shell:
+        """
+        python ../scripts/dna_viewer_table.py -i {input} -o {params}
+        """
+
+rule closed_flanks:
+    input:
+        fig = rules.intact_region_figure.output,
+    output:
+        "LRS-annotation/{species}/{sample}/{region}/intact/{sample}_{hap}_{region}_{i}.done"
+    shell:
+        """
+        echo {wildcards.sample} {wildcards.hap} {wildcards.region} {wildcards.i} intacted > {output}
+        """
+
+rule mapping_roi_flanking_genes_to_reference:
+    input:
+        fa = REFERENCE,
+        flanks = rules.flanking_genes_in_region.output,
+    output:
+        sam = temp("map_temp/{species}/{region}/reference_{region}.sam"),
+        flank_region = temp("map_temp/{species}/{region}/reference_{region}.txt")
+    threads: 6
+    conda:
+        "../envs/minimap2.yaml"
+    shell:
+        """
+        minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam}
+        cut -f1-5 {output.sam} | grep -v "@" | awk '$3!="*"' > {output.flank_region}
+        """
+
+rule identify_roi_scaffolds_from_reference:
+    input:
+        expand("map_temp/{{species}}/{region}/reference_{region}.txt", region = REGIONS.keys())
+    output:
+        "map_temp/{species}/reference_regions.txt"
+    shell:
+        """
+        cat {input} | awk '{{print $3}}' | awk '!s[$0]++' > {output}
+        """
+
+rule extract_roi_scaffold_from_reference:
+    input:
+        fa = REFERENCE,
+        scaffold = "map_temp/{species}/reference_regions.txt"
+    output:
+        "map_temp/{species}/reference_regions.fasta"
+    conda:
+        "../envs/seqkit.yaml"    
+    shell:
+        """
+        seqkit grep -f {input.scaffold} {input.fa} -o {output}
+        """
+
+rule scaffold_sample_using_reference:
+    input:
+        fa = fasta_inputs,
+        ref = rules.extract_roi_scaffold_from_reference.output,
+    output:
+        "LRS-annotation/{species}/{sample}/{sample}_{hap}_scaffold.fa"
+    threads: 10
+    params:
+        scaffold = "LRS-annotation/{species}/{sample}_{hap}_scaffold/",
+    conda:
+        "../envs/ragtag.yaml"
+    shell:
+        """
+        ragtag.py scaffold -t {threads} -o {params.scaffold} -u {input.ref} {input.fa}
+        if [[ -f {params.scaffold}/ragtag.scaffold.fasta ]]; then
+            mv {params.scaffold}/ragtag.scaffold.fasta {output}
+        else
+            cp {input.fa} {output}
+        fi
+        rm -r {params.scaffold}
+        """
+
+# This rule could be recycle
+rule scaffold_fragmentes_mapping_to_region:
+    input:
+        fa = rules.scaffold_sample_using_reference.output,
+        flanks = rules.flanking_genes_in_region.output,
+    output:
+        sam = temp("LRS-annotation/{species}/{sample}_{hap}_scaffold_{region}.sam"),
+        flank_region = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_scaffold_{region}.txt"
+    threads: 10
+    conda:
+        "../envs/minimap2.yaml"
+    shell:
+        """
+        minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam}
+        cut -f1-5 {output.sam} | grep -v "@" | awk '$3!="*"' > {output.flank_region}
+        """
+
+use rule region_sam_to_bed as fragtured_region_sam_to_bed with:
+    input:
+        sam = rules.scaffold_fragmentes_mapping_to_region.output['sam']
+    output:
+        bam = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_scaffold_{region}.bam"),
+        sort = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_scaffold_{region}_sort.bam"),
+        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_flanking_genes_scaffold_{region}.bed"    
+
+rule check_scaffold_flanking_genes:
+    input:
+        loc = rules.scaffold_fragmentes_mapping_to_region.output['flank_region'],
+        info = "regions/{species}/{region}.info"
+    output:
+        status = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_scaffold_{region}_status.txt",
+    shell:
+        """
+        python ../scripts/check_flanking_genes.py -i {input.info} -l {input.loc} -o {output}
+        """
+
+rule scaffold_region_coordinates:
+    input:
+        bed = rules.fragtured_region_sam_to_bed.output['bed'],
+        status = rules.check_scaffold_flanking_genes.output
+    output:
+        bed = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_scaffold_region_{region}.bed",
+    shell:
+        """
+        python ../scripts/bam2bed.py -s {input.status} -b {input.bed} -r {wildcards.region} -o {output}
+        """
+
+rule scaffold_extraction:
+    input:
+        fa = rules.scaffold_sample_using_reference.output,
+        stat = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_flanking_gene_scaffold_{region}_status.txt",
+    output:
+        scaffold = "LRS-annotation/{species}/{sample}/{region}/flanking/{sample}_{hap}_{region}_fragmented.txt",
+        fa = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_scaffold_only.fa"
+    conda:
+        "../envs/seqkit.yaml"
+    shell:
+        """
+        awk '{{print $4}}' {input.stat} > {output.scaffold}
+#        while read -r type stat flank scaffold; do
+#            if [[ ${{stat}} == "closed" ]]; then
+#                echo ${{scaffold}}
+#            fi
+#        done < {input.stat} > {output.scaffold}
+
+        seqkit grep -f {output.scaffold} {input.fa} -o {output.fa}
+        """
+
+rule scaffold_region_extraction:
+    input:
+        bed = rules.scaffold_region_coordinates.output,
+        fa = rules.scaffold_extraction.output['fa'],
+    output:
+        "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_fragmented.fa",
+    conda:
+        "../envs/bedtools.yaml"
+    shell:
+        """
+        bedtools getfasta -fi {input.fa} -bed {input.bed} -s > {output}
+        """
+
+#### Here is the error check check check
+rule remapping_flanking_genes_scaffold:
+    input:
+        fa = rules.scaffold_region_extraction.output,
+        flanks = rules.flanking_genes_in_region.output,
+    output:
+        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_fragmented_remap_{region}.sam",
     threads: 6
     conda:
         "../envs/minimap2.yaml"
@@ -375,13 +599,13 @@ rule remapping_flanking_genes_intact:
         minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam}
         """
 
-rule visual_intact_flanking_map:
+rule visual_scaffold_flanking_map:
     input:
-        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.sam",
+        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_fragmented_remap_{region}.sam",
     output:
-        bam = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.bam"),
-        sort = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}_sort.bam"),
-        bed = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.bed"),
+        bam = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_fragmented_remap_{region}.bam"),
+        sort = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_fragmented_remap_{region}_sort.bam"),
+        bed = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_fragmented_remap_{region}.bed"),
     threads: 2
     conda:
         "../envs/sambed.yaml"
@@ -410,51 +634,48 @@ rule visual_intact_flanking_map:
         ' > {output.bed}
         """
 
-rule visual_intact_flanking_bed:
+rule visual_scaffold_flanking_bed:
     input:
-        bed = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.bed",
-        filtr = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact_final_{i}.bed"
+        bed = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_fragmented_remap_{region}.bed",
+        filtr = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_fragmented_final_{i}.bed",
+        n_gaps = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_fragmented_N_coords.bed"
     output:
-        visual_bed = "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_visual_{i}.bed"
+        visual_bed = "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_fragmented_visual_{i}.bed"
     shell:
         """
         cat {input} > {output}
         """
 
-
-rule intact_region_figure:
+rule scaffold_region_figure:
     input:
-        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_visual_{i}.bed"
+        rules.visual_scaffold_flanking_bed.output
     conda:
         "../envs/dna_viewer.yaml"
     output:
-        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_report_{i}.svg"
+        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_fragmented_{i}.svg"
     params:
-        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_report_{i}"
+        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_fragmented_{i}"
     threads: 6
     shell:
         """
         python ../scripts/dna_viewer_table.py -i {input} -o {params}
         """
 
-rule closed_flanks:
-    input:
-        "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_report_{i}.svg"
-    output:
-        "LRS-annotation/{species}/{sample}/{region}/intact/{sample}_{hap}_{region}_{i}.done"
-    shell:
-        """
-        echo {wildcards.sample} {wildcards.hap} {wildcards.region} {wildcards.i} annotated > {output}
-        """
-
+### Here is the fragmented rule
 rule fragmented_flanks:
     input:
-        "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_fragmented_final_{i}.csv"
+        fig = rules.scaffold_region_figure.output,
+        bed = rules.visual_scaffold_flanking_bed.output,
     output:
         "LRS-annotation/{species}/{sample}/{region}/fragments/{sample}_{hap}_{region}_{i}.done"
     shell:
         """
-        echo {wildcards.sample} {wildcards.hap} {wildcards.region} {wildcards.i} fragmented > {output}
+        n_gaps=$(grep -c "N_gap" {input.bed})
+        if [[ n_gaps -gt 0 ]]; then
+            echo {wildcards.sample} {wildcards.hap} {wildcards.region} {wildcards.i} scaffolded > {output}
+        else
+            echo {wildcards.sample} {wildcards.hap} {wildcards.region} {wildcards.i} fragmented > {output}
+        fi
         """        
 
 rule missing_flanks:

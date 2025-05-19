@@ -340,7 +340,13 @@ def process_gene_names(df):
     df['base_gene'] = df['gene_group'].str.split('|').str[0].str.replace(r'_group.*', '', regex=True)
     
     df_sorted = df.sort_values(by=['vs_ref', 'percent'], ascending=[True, False])
-    df_with_suffix = df_sorted.groupby('base_gene', group_keys=False).apply(assign_suffix)
+#    df_with_suffix = df_sorted.groupby('base_gene', group_keys=False).apply(assign_suffix)
+    df_with_suffix = (
+    df_sorted
+      .groupby('base_gene', group_keys=True)
+      .apply(assign_suffix, include_groups=False)
+      .reset_index(level='base_gene')
+    )
     df_with_suffix['gene_name'] = df_with_suffix['base_gene'] + df_with_suffix['gene_suffix'] + "_p" + df_with_suffix['percent'].astype(str)    
     df_with_suffix = df_with_suffix.drop(columns=['base_gene', 'gene_suffix', 'gene_group'])    
     df_with_suffix = df_with_suffix.sort_values('roi_start')
