@@ -24,6 +24,7 @@ The annotation tool, like the assembly pipeline, requires a configuration file. 
 
 ```
 species: "scientific name of species"
+reference: "/path/to/reference.fasta"
 region:
   Region1:
     left_flank: "Flanking gene"
@@ -39,6 +40,12 @@ region:
     right_flank_local: "/path/to/right.fasta"
     cDNA_library: "/path/to/cDNA_reference.fasta"
 ```
+
+### Reference:
+
+Specify the location of the assembly reference (e.g., T2T).
+This reference will serve as the template for scaffolding fragmented input data.
+Successfully generated scaffolds from this process will then be utilized for subsequent annotation procedures. 
 
 
 ### Regions of interest
