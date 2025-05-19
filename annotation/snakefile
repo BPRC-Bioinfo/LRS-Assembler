@@ -9,7 +9,7 @@ from glob import glob
 from pathlib import Path
 from multiprocessing import cpu_count
 
-configfile: "annno_run-config.yaml"
+configfile: "configs/annno_run-config.yaml"
 REGIONS = config["region"]
 SPECIES = config['species'].replace(" ", "_")
 REFERENCE = config['reference']
