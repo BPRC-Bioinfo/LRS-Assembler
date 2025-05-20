@@ -1,5 +1,5 @@
 # Filter based on blast results
-# v0.0.8
+# v0.0.9
 # By Giang Le & Jaimy
 
 import pandas as pd
@@ -141,8 +141,11 @@ def select_best_per_cluster(hits):
       2) smallest vs_ref      
     """
     clusters = cluster_hits_by_overlap(hits)
+
     best_hits = []
     for cluster in clusters:
+        cluster_df = pd.DataFrame(cluster)
+
 #        best = min(cluster, key=lambda h: (h['vs_ref'], -h['percent']))
         best = min(cluster, key=lambda h: (-h['percent'], h['vs_ref']))
         best_hits.append(best)
@@ -152,12 +155,45 @@ def max_nonoverlapping(genes, start, end):
     """
     Given a list of gene-dicts with 'roi_start'/'roi_end',
     returns the maximal non-overlapping subset (greedy by end).
+    If two candidates have the same roi_end *and* the same vs_ref/percent,
+    the shorter interval (smaller roi_end–roi_start) will be picked first.
+    """
+    # 1) keep only those entirely inside [start, end]
+    in_window = [g for g in genes
+                 if g['roi_start'] >= start and g['roi_end'] <= end]
+
+    # 2) sort by:
+    #    (a) end coordinate
+    #    (b) vs_ref      (lower is “better”)
+    #    (c) percent     (higher is “better”, so we use -percent)
+    #    (d) size        (smaller is “better”)
+    in_window.sort(key=lambda g: (
+        g['roi_end'],
+        g.get('vs_ref', 0),
+        -g.get('percent', 0.0),
+        (g['roi_end'] - g['roi_start'])
+    ))
+
+    # 3) pick greedily
+    selected = []
+    last = start
+    for g in in_window:
+        if g['roi_start'] >= last:
+            selected.append(g)
+            last = g['roi_end']
+    return selected
+    
+def max_nonoverlapping2(genes, start, end):
+    """
+    Given a list of gene-dicts with 'roi_start'/'roi_end',
+    returns the maximal non-overlapping subset (greedy by end).
     """
     # 1) keep only those entirely inside [start, end]
     in_window = [g for g in genes
                  if g['roi_start'] >= start and g['roi_end'] <= end]
     # 2) sort by their end coordinate
     in_window.sort(key=lambda g: g['roi_end'])
+    print (in_window)
     # 3) pick greedily
     selected = []
     last = start
@@ -169,79 +205,62 @@ def max_nonoverlapping(genes, start, end):
 
 def process_hits_cDNA(hits):
     """
-    - If any hits have vs_ref == 0:  do your zero‐vs_ref non‑overlap selection,
-      then cluster the REMAINING hits and pick best-per-cluster.
-    - If none have vs_ref == 0: cluster ALL hits and pick best-per-cluster.
-    Returns a LIST of hit‑dicts.
+    Recursively select hits to fill in the whole ROI:
+    1) If any hits have vs_ref == 0, cluster those and pick non-overlapping bests.
+       Else cluster ALL hits and pick best-per-cluster.
+    2) Remove selected hits from the pool.
+    3) Recurse on the remainder until empty.
+    Returns a LIST of hit-dicts, sorted by roi_start.
     """
     if not hits:
         return []
 
+    # 1) choose this round’s winners
     vs_ref_zero = [h for h in hits if h['vs_ref'] == 0]
-#    vs_ref_zero = [h for h in hits if h['vs_ref'] == 0 and h['percent'] == 100.0]
+
+    vs_ref_zero_df = pd.DataFrame(vs_ref_zero)
 
     if vs_ref_zero:
+        # cluster zeros and pick non-overlapping bests
         groups = group_overlapping_hits(vs_ref_zero)
-#        print (groups)
-
-        results = []
-        for idx, group in enumerate(groups, start=1):
+        interim = []
+        for group in groups:
             if not group:
-                print(f"Group {idx}: empty")
                 continue
-
-            roi_start = min(g['roi_start'] for g in group)
-            roi_end   = max(g['roi_end']   for g in group)
-            chosen = max_nonoverlapping(group, roi_start, roi_end)
-            
-            results.extend(chosen)           
-
-        current_best = pd.DataFrame(results)
-
-        # coords of current best
-        intervals = current_best[['roi_start','roi_end']].to_records(index=False)
-
-        filtered = remove_contained(intervals)
-        selected = max_non_overlapping(filtered)
-
-        selected_df = (
-            current_best
+            start = min(h['roi_start'] for h in group)
+            end   = max(h['roi_end']   for h in group)
+            interim.extend(max_nonoverlapping(group, start, end))
+        # filter contained intervals and pick global max‐nonoverlapping
+        df = pd.DataFrame(interim)
+        ivs = df[['roi_start','roi_end']].to_records(index=False)
+        filtered = remove_contained(ivs)
+        best_ivs = max_non_overlapping(filtered)
+        winners = (
+            df
             .set_index(['roi_start','roi_end'])
-            .loc[[(iv.roi_start, iv.roi_end) for iv in selected]]
+            .loc[[(iv.roi_start, iv.roi_end) for iv in best_ivs]]
             .reset_index()
+            .to_dict('records')
         )
-
-        # remove anything overlapping those selected zeros
-        sel_list = selected_df.to_dict('records')
-
-        remaining = [
-            h for h in hits
-            if not any(
-                h['roi_start'] <= s['roi_end'] and 
-                h['roi_end']   >= s['roi_start']
-                for s in sel_list
-            )
-        ]
-
-        if remaining:
-            remainingz = pd.DataFrame(remaining)
-            remainingz = remainingz.sort_values("roi_start")
-
-            # cluster & pick best from remaining
-            best_from_clusters = select_best_per_cluster(remaining)
-
-            # combine the two sets of winners
-            combined = pd.concat([selected_df, pd.DataFrame(best_from_clusters)],
-                                 ignore_index=True)
-        else:
-            combined =current_best.copy()
     else:
-        best_from_clusters = select_best_per_cluster(hits)
-        combined = pd.DataFrame(best_from_clusters)
+        # no zeros: just pick best per cluster over all hits
+        winners = select_best_per_cluster(hits)
 
-    combined = combined.sort_values('roi_start').reset_index(drop=True)
+    # 2) subtract overlapping hits
+    remaining = [
+        h for h in hits
+        if not any(
+            h['roi_start'] <= w['roi_end'] and
+            h['roi_end']   >= w['roi_start']
+            for w in winners
+        )
+    ]
 
-    return combined.to_dict('records')
+    # 3) recurse on what's left
+    return sorted(
+        winners + process_hits_cDNA(remaining),
+        key=lambda h: h['roi_start']
+    )
 
 def process_hits_gDNA(hits):
 
@@ -347,7 +366,12 @@ def process_gene_names(df):
       .apply(assign_suffix, include_groups=False)
       .reset_index(level='base_gene')
     )
-    df_with_suffix['gene_name'] = df_with_suffix['base_gene'] + df_with_suffix['gene_suffix'] + "_p" + df_with_suffix['percent'].astype(str)    
+    df_with_suffix['gene_name'] = (
+    df_with_suffix['base_gene']
+    + df_with_suffix['gene_suffix']
+    + "_p"
+    + df_with_suffix['percent'].map("{:.2f}".format)
+    )   
     df_with_suffix = df_with_suffix.drop(columns=['base_gene', 'gene_suffix', 'gene_group'])    
     df_with_suffix = df_with_suffix.sort_values('roi_start')
 
@@ -377,6 +401,7 @@ if __name__ == "__main__":
     if "gDNA" in args.lib:
         final_data['roi_start'] = final_data['roi_start'] + 1
         final_data['ref_start'] = final_data['ref_start'] + 1
+
         final_data = final_data[['gene_name','roi_start','roi_end','percent','align','align_percent','mismatch','gap','ref_name','ref_start','ref_end','ref_len','vs_ref','contig','strand']].copy()
         mask = (
             final_data[['mismatch','gap','vs_ref']].ne(0).any(axis=1)
@@ -390,6 +415,7 @@ if __name__ == "__main__":
             |
             final_data['percent'].ne(100)
         )
+
     final_data['ref_name'] = final_data['ref_name'].str.split('|').str[0]
     final_data['align_percent'] = final_data['align_percent'] * 100
     final_data['status'] = np.where(mask, 'novel', 'known')
@@ -398,7 +424,7 @@ if __name__ == "__main__":
     loc = final_data.columns.get_loc('roi_end') + 1
     final_data.insert(loc, 'status', status)
 
-#    print (final_data)
+    print (final_data)
     final_data.to_csv(f"{args.output}.csv", sep='\t', float_format='%.2f' ,index=False)
 
     bed_file = final_data[['contig','roi_start','roi_end','gene_name','strand']].copy()

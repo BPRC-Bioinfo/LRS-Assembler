@@ -1,5 +1,5 @@
 # Annotation Pipeline Standalone
-# v0.0.8
+# v0.0.9
 # By Giang Le & Jaimy
 
 
@@ -60,7 +60,7 @@ UNIQUE_FLANKS = set(
 )
 
 def check_library(region_name, library):
-    if library :
+    if library:
         library_path = Path(library)
         if not library_path.is_file():
             print(f"Error: Library file not found at {library} for {region_name} region.")
@@ -75,6 +75,21 @@ def fasta_inputs(wc):
         if os.path.exists(path):
             return path
     raise FileNotFoundError(f"No fasta file found for {wc.sample}_{wc.hap}")
+
+def assembly_reference(ref):
+    if not ref or not ref.strip():
+        return "no_ref"
+
+    p = Path(ref)
+    if not p.exists():
+        return "no_ref"
+
+    return str(p.resolve())
+
+REFERENCE_PATH = assembly_reference(REFERENCE)
+
+print (REFERENCE)
+print (REFERENCE_PATH)
 
 
 wildcard_constraints:
@@ -369,47 +384,59 @@ rule roi_N_gaps_detect:
           {input.fa} | awk '{{ print $0, "N_gap",0, "-1"}}' | sed 's/ /\t/g' > {output}
         """
 
-rule visual_intact_flanking_map:
+rule remapping_flanking_genes_intact:
     input:
-        rules.region_sam_to_bed.output['bed'],
+        fa = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact.fa",
+        flanks = "regions/{species}/{region}.fasta",
     output:
-        "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_intact_remap_{region}.bed",
+        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.sam",
+    threads: 6
+    conda:
+        "../envs/minimap2.yaml"
     shell:
         """
-        awk '{{ sub(/.*_/, "", $4); print $1"\t"$2"\t"$3"\t"$4"\tFlanking gene\t"$6 }}' {input} |\
-        awk '!s[$0]++' |\
-        awk '
-            BEGIN {{ FS=OFS = "\t" }}
+        minimap2 -ax asm5 -t {threads} {input.fa} {input.flanks} > {output.sam}
+        """
 
-            # collect per‐key min(start) and max(end)
-            $5 == "Flanking gene" {{
-              key = $1 FS $4 FS $5 FS $6
-              if (!(key in mn) || $2 < mn[key]) mn[key] = $2
-              if (!(key in mx) || $3 > mx[key]) mx[key] = $3
+rule visual_intact_flanking_map:
+    input:
+        sam = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.sam",
+    output:
+        bam = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.bam"),
+        sort = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}_sort.bam"),
+        bed = temp("map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.bed"),
+    threads: 2
+    conda:
+        "../envs/sambed.yaml"
+    shell:
+        """
+        samtools view -@ {threads} -bh {input.sam} > {output.bam}
+        samtools sort -@ {threads} -o {output.sort} {output.bam}
+        bedtools bamtobed -i {output.sort} | awk '{{ sub(/.*_/, "", $4); print $1"\t"$2"\t"$3"\t"$4"\tFlanking gene\t"$6 }}' |\
+        awk '!s[$0]++' | awk -F'\t' '
+          $5=="Flanking gene" {{
+            # build a key of ID, gene, type and strand
+            key = $1 FS $4 FS $5 FS $6
+            # initialize or tighten the min/start and max/end
+            if (!(key in mn) || $2 < mn[key]) mn[key] = $2
+            if (!(key in mx) || $3 > mx[key]) mx[key] = $3
+          }}
+          END {{
+            OFS = "\t"
+            for (k in mn) {{
+              # split the key back into its components
+              split(k,a,FS)
+              # print: ID, min(start), max(end), gene, type, strand
+              print a[1], mn[k], mx[k], a[2], a[3], a[4]
             }}
-
-            END {{
-              # 1) find the global minimum across all mn[key]
-              gmin = ""
-              for (k in mn)
-                if (gmin == "" || mn[k] < gmin)
-                  gmin = mn[k]
-
-              # 2) print each record, subtracting gmin from both start and end
-              for (k in mn) {{
-                split(k, a, FS)
-                # a[1]=ID, mn[k]-gmin=start−gmin, mx[k]-gmin=end−gmin, a[2]=gene, a[3]=type, a[4]=strand
-                print a[1], mn[k] - gmin, mx[k] - gmin, a[2], a[3], a[4]
-              }}
-            }}
-        ' > {output}
-        """        
+          }}
+        ' > {output.bed}
+        """
 
 rule visual_intact_flanking_bed:
     input:
-        bed = rules.visual_intact_flanking_map.output,
-        filtr = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact_final_{i}.bed",
-        n_gaps = rules.roi_N_gaps_detect.output
+        bed = "map_temp/{species}/{region}/{sample}_{hap}_flank_genes_remap_{region}.bed",
+        filtr = "LRS-annotation/{species}/{sample}/{region}/{sample}_{hap}_{region}_intact_final_{i}.bed"
     output:
         visual_bed = "LRS-annotation/{species}/{sample}/{region}/annotation/{sample}_{hap}_{region}_intact_visual_{i}.bed"
     shell:

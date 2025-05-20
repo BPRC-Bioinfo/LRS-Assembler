@@ -58,6 +58,8 @@ colnames(regions_status) <- c("Sample","Hap","Region","Lib","Status")
 ```
 
 
+
+
 ```{r annotation, results='asis'}
 
 for (region in sort(unique(regions_status$Region))) {
@@ -80,28 +82,52 @@ for (region in sort(unique(regions_status$Region))) {
           cat(paste0("**Image file not found:** ", annote_image, "\n\n"))
         }
         
-#        csv_files <- paste0(region, "/", sample, "_", hap, "_", region, "_intact_final_", lib, ".csv")
-#        if (file.exists(csv_files)) {
-#          annotation_data <- read.csv(csv_files, sep = '\t', header = TRUE)
-#          annotation_data$contig <- NULL
-#          annotation_data$ref_name <- NULL
+        csv_files <- paste0(region, "/", sample, "_", hap, "_", region, "_intact_final_", lib, ".csv")
+        if (file.exists(csv_files)) {
+          annotation_data <- read.csv(csv_files, sep = '\t', header = TRUE)
+          annotation_data$contig <- NULL
+          annotation_data$ref_name <- NULL
+          annotation_data <- annotation_data %>%
+            mutate(strand = recode(strand,
+                                   `+` = "pos",
+                                   `-` = "neg"))
           
-#          table_html <- kbl(annotation_data) %>%
-#            kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
-#            scroll_box(width = "100%", height = "200px")
+          table_html <- kbl(annotation_data) %>%
+            kable_styling(bootstrap_options = c("striped", "hover","condensed", "responsive"))
+            
+          print(table_html)
+          cat("\n\n")
           
-#          print(table_html)
-#          cat("\n\n")
-          
-#        } else {
-#          cat(paste0("**CSV file not found:** ", csv_files, "\n\n"))
-#        }
+        } else {
+          cat(paste0("**CSV file not found:** ", csv_files, "\n\n"))
+        }
+        
       } else if (regions_hap_annotate$Status == "scaffolded") {
         annote_image <- paste0(region, "/annotation/", sample, "_", hap, "_", region, "_fragmented_", lib, ".svg")
         if (file.exists(annote_image)) {
           cat(paste0("![](", annote_image, ")\n\n"))
         } else {
           cat(paste0("**Image file not found:** ", annote_image, "\n\n"))
+        }
+        
+        csv_files <- paste0(region, "/", sample, "_", hap, "_", region, "_fragmented_final_", lib, ".csv")
+        if (file.exists(csv_files)) {
+          annotation_data <- read.csv(csv_files, sep = '\t', header = TRUE)
+          annotation_data$contig <- NULL
+          annotation_data$ref_name <- NULL
+          annotation_data <- annotation_data %>%
+            mutate(strand = recode(strand,
+                                   `+` = "pos",
+                                   `-` = "neg"))
+          
+          table_html <- kbl(annotation_data) %>%
+            kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+          
+          print(table_html)
+          cat("\n\n")
+          
+        } else {
+          cat(paste0("**CSV file not found:** ", csv_files, "\n\n"))
         }
       }
       
@@ -112,9 +138,7 @@ for (region in sort(unique(regions_status$Region))) {
   cat("\n\n")
 }
 
-# Final text clearly separated from any tabset
-#cat("\n---\n")
-#cat("**LRS-annotation version 0.0.8**\n")
+
 ```
 
 ```{r}
@@ -127,156 +151,7 @@ knitr::knit_exit()
 
 
 
-```{r annotation_wrong, results='asis'}
 
-for (region in sort(unique(regions_status$Region))) {
-  cat(paste0("### Region: ", region, " {.tabset}\n"))
-  
-  regions_annotation <- subset(regions_status, Region == region)
-  for (hap in sort(unique(regions_annotation$Hap))) {
-    cat(paste0("#### Haplotype: ", hap, "\n"))
-    regions_hap <- subset(regions_annotation, Hap == hap)
-    for (lib in sort(unique(regions_hap$Lib))) {
-      cat(paste0("##### ", lib, "\n"))
-      regions_hap_annotate <- subset(regions_hap, Lib == lib)
-      if (regions_hap_annotate$Status == "annotated"){
-        annote_image <- paste0(region,"/annotation/",sample,"_",hap,"_",region,"_intact_report_",lib,".svg")
-        if (file.exists(annote_image)) {
-          cat(paste0("![](", annote_image, ")\n"))
-        } else {
-          cat(paste0("Image file not found: ", annote_image, "\n"))
-        }
-        
-        csv_files = paste0(region,"/",sample,"_",hap,"_",region,"_intact_final_",lib,".csv")
-        if (file.exists(csv_files)) {
-          cat("\n")
-          annotation_data <- read.csv(csv_files, sep = '\t', header = T)
-          annotation_data$contig <- NULL
-          annotation_data$ref_name <- NULL
-          annotation_data <- kbl(annotation_data) %>%
-            kable_styling(bootstrap_options = c("striped", "hover","condensed", "responsive")) %>%
-            scroll_box(width = "100%", height = "200px")
-          print (annotation_data)
-          cat("\n")
-        } else {
-          cat(paste0("CSV file not found: ", csv_files, "\n"))
-        }
-      }
-
-      cat ("\n")
-    }
-  }
-}
-
-```
-
-
-
-
-```{r results='asis'}
-
-# Loop through unique samples
-  for (region in unique(sample_data$region)) {
-    cat(paste0("### Region: ", region, " {.tabset}\n"))
-
-    region_data <- subset(sample_data, region == region)
-
-    # Loop through unique haplotypes
-    for (haplotype in unique(region_data$haplotype)) {
-      cat(paste0("#### Haplotype: ", haplotype, "\n"))
-      cat("\n")
-      
-      annote_table <- region_data[region_data$haplotype == haplotype & region_data$region == region, ]$file_path
-      annote_image <- gsub("_final\\.tsv$", ".svg", annote_table)
-      
-      if (file.exists(annote_image)) {
-        cat(paste0("![](", annote_image, ")\n"))
-      } else {
-        cat(paste0("Image file not found: ", annote_image, "\n"))
-      }
-      
-      table_data <- read.table(annote_table, header = TRUE, sep = "\t")
-      table_data$contig <- NULL
-      print (knitr::kable(table_data))
-    }
-  }
-}
-```
-
-
-
-
-
-
-```{r check_files2}
-
-status_file <- paste0(sample,"_",region,"_status.csv")
-filter_file <- paste0(path,"/",sample,"_",region,"_final.tsv")
-fasta_file <- paste0(path,"/",sample,"_",region,"_intact.fa")
-bed_file <- paste0(path,"/",sample,"_",region,"_intact.bed")
-image_file <- paste0(path,"/",sample,"_",region,"_report.svg")
-```
-
-
-```{r general_info, echo = FALSE}
-
-flanks <- read.csv(paste0(sample,"_",region,"_status.csv"), header = F, sep = "\t")
-
-if ("flanks" %in% flanks$V1){
-  if ("closed" %in% flanks$V2){
-    roi = "intact"
-    contig = flanks$V4
-  }
-}
-
-left_flank = gsub("/.*", "", flanks$V3)
-right_flank = gsub(".*/", "", flanks$V3)
-```
-
-## General information
-
-Sample: `r sample`
-
-Region: `r region`
-
-Species: `r species`
-
-Left flank: `r left_flank`
-
-Right flak: `r right_flank`
-
-Region of interest status: `r roi`
-
-ROI's contig: `r contig`
-
-## Annotation
-
-```{r display_svg, echo=FALSE, fig.align='center', out.width='100%'}
-
-knitr::include_graphics(image_file)
-
-```
-
-
-### Mapped Fragments
-
-
-```{r table, }
-
-candidates <- read.csv(filter_file, header = T, sep = "\t" )
-
-replace_strand <- function(df, strand_column = "strand") {
-  df[[strand_column]] <- ifelse(df[[strand_column]] == "-", "neg", 
-                                ifelse(df[[strand_column]] == "+", "pos", 
-                                       df[[strand_column]]))
-  return(df)
-}
-
-candidates <- replace_strand(candidates)
-
-kable(candidates) %>%
-  kable_styling(latex_options = "striped")
-```
 
 
 ### Files download
