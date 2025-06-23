@@ -53,41 +53,48 @@ def process_path_line(line):
     }
 
 def parse_data(data):
-
     result = {}
-    current_record = None  
-    current_path = None 
+    current_record = None 
+    current_record_name = None
 
     for line in data.splitlines():
         if not line.strip():
-            continue 
+            continue
 
         if line.startswith('>'):
-            record_name = line[1:].strip()
-            result[record_name] = {}
-            current_record = result[record_name]
-            current_path = None
+            current_record_name = line[1:].strip()
+            result[current_record_name] = []
+            current_record = None
             continue
 
         stripped_line = line.strip()
 
         if stripped_line.startswith("Path "):
+            # e.g. "Path 1:" → path_num = 1
+            try:
+                path_num = int(stripped_line.split()[1].rstrip(':'))
+            except ValueError:
+                path_num = None
+
+            rec = {"path_num": path_num}
             path_details = process_path_line(stripped_line)
-            if path_details and current_record is not None:
-                current_record.update(path_details)
+            if path_details:
+                rec.update(path_details)
+
+            result[current_record_name].append(rec)
+            current_record = rec
             continue
 
         if (line.startswith("    ") or line.startswith("\t")) and current_record is not None:
-            prop_line = line.strip()
+            prop_line = stripped_line
+
             if prop_line.startswith("Number of exons:"):
                 try:
-                    exon_val = int(prop_line.split("Number of exons:")[1].strip())
-                    current_record["exons"] = exon_val
+                    current_record["exons"] = int(prop_line.split(":",1)[1].strip())
                 except ValueError:
                     current_record["exons"] = None
                 continue
 
-            # Parse the "Percent identity:" line.
             if prop_line.startswith("Percent identity:"):
                 percent_pattern = (
                     r"Percent identity:\s*([\d.]+)\s+\((\d+)\s+matches,\s+"
@@ -105,9 +112,18 @@ def parse_data(data):
     return result
 
 def gmap_to_dataframe(data_dict):
+    rows = []
+    for record_name, paths in data_dict.items():
+        for p in paths:
+            # copy the path dict and add the record name
+            row = {"record": record_name}
+            row.update(p)
+            rows.append(row)
 
-    df = pd.DataFrame.from_dict(data_dict, orient='index')
-    df = df.reset_index().rename(columns={'index': 'ref_name'})
+    df = pd.DataFrame(rows)
+    df = df.rename(columns={'record': 'ref_name'})
+
+    df['ref_name'] = df['ref_name'].astype(str)
 
     temp = df['ref_name'].str.split(r'\|', expand=True)
 

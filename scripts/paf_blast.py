@@ -29,7 +29,6 @@ def gene_group(paf_file):
 
         if ref_info is not None:
             groups.setdefault(ref_info, []).append((chr_start, chr_end, contig))
-    print (groups)
     return groups
 
 def blast_paf(groups, ref_file, fasta_file, threads, output_file):
@@ -37,7 +36,8 @@ def blast_paf(groups, ref_file, fasta_file, threads, output_file):
     for gene, values in groups.items():
         df = pd.DataFrame()
         for start, end, contig in values:
-            contig_dir = os.path.join("map_temp", contig)
+            clean_contig = re.sub(r'[^a-zA-Z0-9]', '', contig)
+            contig_dir = os.path.join("map_temp", clean_contig)
             contigs_to_remove.add(contig)
             os.makedirs(contig_dir, exist_ok=True)
             new_row = {'contig': contig, 'start': start, 'end': end, 'gene': gene}
@@ -50,6 +50,7 @@ def blast_paf(groups, ref_file, fasta_file, threads, output_file):
         bed_filename = os.path.join(contig_dir, f"{file_name}.bed")
         df.to_csv(bed_filename, sep='\t', header=False, index=False)
 
+        # Extract scaffold
         chr_region_fasta = os.path.join(contig_dir, f"{file_name}_chr.fasta")
         try:        
             subprocess.run(["bedtools", "getfasta", "-fi", fasta_file, "-bed", bed_filename], stdout=open(chr_region_fasta, 'w'), check=True)
@@ -91,7 +92,8 @@ def blast_paf(groups, ref_file, fasta_file, threads, output_file):
             print(f"An unexpected error occurred: {e}")
 
     for contig in contigs_to_remove:  # Iterate through the *unique* contigs
-        contig_dir = os.path.join("map_temp", contig)
+        clean_contig = re.sub(r'[^a-zA-Z0-9]', '', contig)
+        contig_dir = os.path.join("map_temp", clean_contig)
         try:
             shutil.rmtree(contig_dir)
             print(f"Removed temporary directory: {contig_dir}")
