@@ -1,0 +1,6 @@
+name: miniprot
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - miniprot=0.16
