@@ -8,7 +8,7 @@ from glob import glob
 from pathlib import Path
 from multiprocessing import cpu_count
 
-configfile: "configs/94_cgp_samples.yaml"
+configfile: "configs/human_kir.yaml"
 REGIONS = config["region"]
 SPECIES = config['species'].replace(" ", "_")
 REFERENCE = config['reference']
@@ -637,7 +637,7 @@ rule multiple_libs_combine:
             while read -r samp hap lib ref roi; do
                 # Build the find pattern
                 pattern="${{samp}}_${{hap}}_${{lib}}*final_${{ref}}.csv"
-                file_path=$(find . -type f -name "$pattern" -print -quit)
+                file_path=$(find ./LRS-annotation/{wildcards.species} -type f -name "$pattern" -print -quit)
 
                 case "$ref" in
                     cDNA)
@@ -656,6 +656,7 @@ rule multiple_libs_combine:
                 esac
             done < "$f"
         done
+        echo "python ../scripts/cgp_combine.py -c $cdna -g $gdna -p $protein -o {output}"
         python ../scripts/cgp_combine.py -c $cdna -g $gdna -p $protein -o {output}
         """
 
