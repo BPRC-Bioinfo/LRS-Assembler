@@ -4,6 +4,7 @@ This Snakemake workflow facilitates the hybrid assembly of long-read datasets ge
 
 In addition to genome assembly, the workflow supports the phasing and annotation of user-specified regions, such as highly heterozygous immune-related haplotypes. By utilizing the high contiguity of paternal and maternal contigs produced by hifiasm, and integrating a user-provided reference sequence database, it enables accurate annotation of these regions. 
 
+
 ## Installation Guide
 
 To download the pipeline, the repository can be cloned using the following command:
@@ -18,64 +19,94 @@ Then install the pipeline dependencies in a new enviroment:
 
 ## Usage Guide
 
-Before running LRS-Assembler, the user has to provide the location of the input data files and define the analysis variables in the configuration file. This file should specify the scientific name of the species studied and, optionally, include details on the flanking genes of the regions of interest and the location of the reference library. If necessary, the user can also adjust the settings for LiftOff, BUSCO and minimap2.
+Before running LRS-Assembler, the user needs to modify the configuration file, which located at ```configs/run-config.yaml```.
+This file contains paths as well as information for the run.
 
-### Updating User-specific Variables
-
-The configuration file, located at ```configs/run-config.yaml```, must be updated with user-specific variables before launching LRS-Assembler. Various settings can be modified, as outlined below.
-
-A config file looks like:
+Here is the breakdown of the config file:
 ```
 species: "Scientific species name"
-reference:
+annotation_ref:
   Reference_name:
     accession_number: "NCBI accession"
-    genome: "/path/to/local/reference/genomic.fna"
-    gff: "/path/to/local.gff"
-    chr_info: "/path/to/local/chr_info_file"
+    genome: "/path/to/local/reference/genomic.fa"
+    gff: "/path/to/local/reference/genome.gff"
+scaffold_ref:
+  Reference_name:
+    accession_number: "NCBI accession"
+    genome: "/path/to/local/reference/genomic.fa"
+    chr_info: "/path/to/local/info_file"
+busco: "busco database"
 region:
   RegionA:
     left_flank: "Flanking gene left"
+    left_flank_local: "/path/to/left.fasta"
     right_flank: "Flanking gene right"
-    library: "/path/to/refereceA.fa" 
-    minimap2: "-x splice:hq"
-    blast: "-word_size 7"
+    right_flank_local: "/path/to/right.fasta"
+    cDNA_library: "path/to/cDNA_reference.fasta" 
+    gDNA_library: "path/to/gDNA_reference.fa"
+    protein_library: "path/to/protein_reference.fa"
   RegionB:
     left_flank: "Flanking gene left"
+    left_flank_local: "/path/to/left.fasta"
     right_flank: "Flanking gene right"
-    library: "/path/to/referenceB.fasta" 
-    minimap2: "-x asm5"
-    blast: "-word_size 7"
-busco: "busco database"
+    right_flank_local: "/path/to/right.fasta"
+    cDNA_library: "path/to/cDNA_reference.fasta" 
+    protein_library: "path/to/protein_reference.fa"
 nanopore:
   Sample_1:
-    - "/path/to/local/Sample_1/nanopore/fastq1"
+    - "/path/to/local/Sample_1/nanopore/directory"
   Sample_2:
-    - "/path/to/local/Sample_2/nanopore/fastq1"
+    - "/path/to/local/Sample_2/nanopore/directory"
 pacbio:
   Sample_1:
-    - "/path/to/local/Sample_1/pacbio/bam1"
+    - "/path/to/local/Sample_1/pacbio/directory"
   Sample_2:
-    - "/path/to/local/Sample_2/pacbio/bam1"
+    - "/path/to/local/Sample_2/pacbio/directory"
 ```
+
 - **Species**:
 Users should specify the scientific name of the species being studied. 
 
-- **Reference**:
-A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the path to a local genome assembly and its annotation file (gff). 
-Additionally, a chromosome information file must be provided to run LiftOff annotations. An example of this file is available in the repository.
+- **Scaffold_ref**:
+A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the path to a local genome assembly.
+If you provided local path for the assembly then you also need to provide a file with the information of the chromosome. This file is used to rename the scaffoled assembly.
 
-- **Region (Optional)**:
-Users can define one or more regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species. 
-To annotate the specified regions, a reference database must be specified in the configuration file. The choice of the minimap2 command depends on whether the reference database contains genomic or transcriptomic sequences. For mapping transcriptomic data to genomic assemblies, the ```splice:hq``` option should be used. For genomic reference databases, options such as ```-ax asm5``` or ```-ax asm10``` are recommended.
+```
+
+```
+
+- **Annotation-Reference**:
+A reference sequence must be specified, either by providing an accession number (e.g., GCF_003339765.1) or by providing the path to a local genome assembly and its annotation file (gff). 
 
 - **BUSCO**:
 To evaluate the completeness of the genome assembly, a BUSCO analysis is performed. This method relies on evolutionarily informed expectations of near-universal single-copy orthologs to assess genome completeness. Various lineage-specific datasets can be used for this assessment, which are available at: https://busco.ezlab.org/list_of_lineages.html.
+
+- **Region (Optional)**:
+Users can define one or more regions of interest, which are identified by their flanking genes. Flanking genes are those located adjacent to the region of interest, and the provided gene names should match those listed in the NCBI database for the specified species.
+It is possible to provide these files locally.
+
+The program can handle three type of databases: Genomic, cDNA and protein. The data could be individual or any combination or all three type of databases. The pipeline will pick the appropriate analysis for each of the database
+
+```
+cDNA_library: "/path/to/local/cDNA_library.fa" 
+gDNA_library: "/path/to/local/gDNA_library.fasta"
+protein_library: "/path/to/local/protein_library.fasta"
+```
 
 - **Nanopore** and **PacBio**:
 The directory path containing ONT or PacBio data should be specified for each sample individually. Multiple samples can be assembled in parallel. The ONT and PacBio reads do not need to be combined into a single file prior to starting the pipeline.
 
 [Short tutorial on how to modiy config file to run multiple samples.](tutorials/config_modify.md) 
+
+
+
+The pipeline accepts FASTQ.GZ files from ONT and BAM for HIFI. Their directories need to be specifed.
+User can specify the reference genome for scaffolding and annotation. These could be the same or two different references.
+If the NCBI accession is provided the pipeline can download and prepare the files. If you already have the files locally you could also provide the path.
+To check for the completeness of the assembly, BUSCO is used where the user needs to note which database to be used.
+
+
+
 
 ### Run The Pipeline
 
