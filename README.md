@@ -177,7 +177,7 @@ To use:
   snakemake --cores 4 --use-conda
 ```
 
-Troubleshooting & support
+## Troubleshooting & support
 - Check results/<sample>/logs/ for failing rules.
 - Re-run failed/incomplete rules:
   ```
@@ -188,5 +188,5 @@ Troubleshooting & support
 - Contact: le@bprc.nl or bruijnesteijn@bprc.nl
 - To report bugs: open an issue and include the minimal config and logs (remove private data).
 
-Cite
+## Cite
 Please cite the project and include the version or commit hash used. Manuscript describing LRS-Assembler is in preparation.
