@@ -6,3 +6,5 @@ channels:
 dependencies:
   - samtools=1.21
   - bedtools
+  - seqkit
+  - python
