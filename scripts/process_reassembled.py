@@ -138,7 +138,7 @@ def main():
             f.write(contig + "\n")
 
     # --- Step 1: Extract closed regions using bedtools ---
-    combined_fasta = args.out + "_missing.fa"
+    combined_fasta = args.out + ".fa"
     bedtools_cmd = ["bedtools", "getfasta", "-fi", args.fasta, "-bed", bed_file, "-fo", combined_fasta]
     print("\nRunning:", " ".join(bedtools_cmd))
     subprocess.run(bedtools_cmd, check=True)

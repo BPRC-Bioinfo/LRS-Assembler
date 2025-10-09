@@ -1,0 +1,7 @@
+name: syri
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - syri=1.7.1
+  - plotsr=1.1.1

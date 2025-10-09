@@ -19,6 +19,7 @@ region:
     library: "/path/to/references/annotation2.fasta" 
     minimap2: "-cx splice:hq -G16k "
     blast: "-word_size 7"
+hifiasm_settings: "--ul-cut 50000 --b-cov 3 --h-cov 200 --m-rate 0.75"
 nanopore:
   Sample_1:
     - "/path/to/local/Sample_1/nanopore/fastq1"

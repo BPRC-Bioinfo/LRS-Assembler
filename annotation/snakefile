@@ -8,7 +8,7 @@ from glob import glob
 from pathlib import Path
 from multiprocessing import cpu_count
 
-configfile: "configs/human_kir.yaml"
+configfile: "configs/human_lilr.yaml"
 REGIONS = config["region"]
 SPECIES = config['species'].replace(" ", "_")
 REFERENCE = config['reference']
@@ -657,7 +657,7 @@ rule multiple_libs_combine:
             done < "$f"
         done
         echo "python ../scripts/cgp_combine.py -c $cdna -g $gdna -p $protein -o {output}"
-        python ../scripts/cgp_combine.py -c $cdna -g $gdna -p $protein -o {output}
+        python ../scripts/cgp_combine.py -c $cdna -g $gdna -p $protein -o {output} || touch {output}
         """
 
 rule multiple_libs_refining:
@@ -667,7 +667,7 @@ rule multiple_libs_refining:
         "LRS-annotation/{species}/{sample}/{region}/final_results/{species}_{region}_{sample}_{hap}_refined.bed",
     shell:
         """
-        python ../scripts/cgp_refine4.py -i {input} -o {output}
+        python ../scripts/cgp_refine4.py -i {input} -o {output} || touch {output}
         """
 
 
