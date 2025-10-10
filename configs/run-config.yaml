@@ -1,10 +1,14 @@
 species: "species name"
-reference:
+annotation_ref:
   reference_name:
-    accession_number: "NCBI accession"
-    genome: "/path/to/local/reference/genomic.fna"
-    gff: "/path/to/local.gff"
-    chr_info: "/path/to/local/chr_info_file"
+    accession_number: "accession_number"
+    genome: "/path/to/local/reference/genomic.fa"
+    gff: "/path/to/local/reference/genome.gff"
+scaffold_ref:
+  reference_name:
+    accession_number: "accession_number"
+    genome: "/path/to/local/reference/genomic.fa"
+    chr_info: "/path/to/local/info_file"
 busco: "busco_database"
 region:
   Region1:
