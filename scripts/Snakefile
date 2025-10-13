@@ -8,7 +8,8 @@ import glob
 import pandas as pd
 from pathlib import Path
 
-configfile: "configs/hrun-config.yaml"
+#configfile: "configs/trio_t2t.yaml"
+configfile: "configs/human.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
 REGIONS = config['region']
@@ -91,16 +92,20 @@ def check_library(region_name, library):
         return "no_lib"
 
 
-SAMPLES = ['HG02080']
 
 
 rule all:
     input:
-        expand("results/{sample}/annotation/{region}/{sample}_{hap}_{species}_{region}_status.csv", sample = SAMPLES, hap = ['hap1','hap2'], scaffold = SCAFFOLDS, species = SPECIES, region = REGIONS),
-        expand("results/{sample}/annotation/{sample}_summary.txt", sample = SAMPLES),
+#        expand("results/{sample}/hifiasm/{sample}_hybridPN.bp.p_ctg.gfa", sample = SAMPLES),
+#        expand("results/{sample}/annotation/{region}/{sample}_{hap}_{species}_{region}_status.csv", sample = SAMPLES, hap = ['hap1','hap2'], scaffold = SCAFFOLDS, species = SPECIES, region = REGIONS),
+#        expand("results/{sample}/annotation/{region}/final_results/{species}_{region}_{sample}_{hap}_refined.bed", sample = SAMPLES, hap = ['hap1','hap2'], scaffold = SCAFFOLDS, species = SPECIES, region = REGIONS),
+#        expand("results/{sample}/annotation/{sample}_summary.txt", sample = SAMPLES),
         expand("results/{sample}/info/{sample}_hybridPN_scaffold_{scaffold}_infos.txt", sample = SAMPLES, scaffold = SCAFFOLDS),
 #        expand("results/{sample}/info/compare_{sample}_{scaffold}_figure.png", sample = SAMPLES, scaffold = SCAFFOLDS),
+        expand("results/{sample}/scaffolds/{sample}_hybridPN_{hap}_scaffolded.fa", sample = SAMPLES, hap = ['hap1','hap2']),
         expand("results/{sample}/midway/syri/{sample}_{scaffold}_syri.png", sample = SAMPLES, scaffold = SCAFFOLDS),
+#        expand("results/{sample}/midway/purge_dups_ont/{sample}_histograph.png", sample = SAMPLES, scaffold = SCAFFOLDS),
+#        expand("results/{sample}/midway/purge_dups/{sample}_primary.purged", sample = SAMPLES)
 
 
 
@@ -468,7 +473,7 @@ rule syri_anaylsis_primary_vs_ref:
         "results/{sample}/midway/syri/"
     shell:
         """
-        syri -c {input.sam} -r {input.ref} -q {input.sample} --dir {params} -F B
+        syri -c {input.sam} -r {input.ref} -q {input.sample} --dir {params} -F S
         mv {params}"syri.out" {output}
         """
 
@@ -543,7 +548,8 @@ rule primary_assembly_purge_dups_histo_graph:
         hist_plot.py {input} {params}
         """
 
-
+'''
+## ONT for purge_dups
 rule primary_assembly_mapping_raws_ont:
     input:
         primary = rules.primary_assembly_gfa_to_fasta.output,
@@ -587,6 +593,7 @@ rule primary_assembly_purge_dups_ont_histo_graph:
         hist_plot.py {input} {params}
         """
 
+'''
 '''
 
 rule primary_assembly_purge_dups_cutoff:
@@ -660,6 +667,110 @@ rule primary_assembly_purge_dups_split_sequences:
 
 
 ## Check if purge dups is needed here
+rule primary_assembly_unplaced:
+    input:
+        fa = rules.primary_assembly_scaffold_rename.output,
+        names = rules.primary_assembly_chromosomes_only.output.names,
+    output:
+        "results/{sample}/info/{sample}_hybridPN_scaffold_{scaffold}_unplaced.txt",
+    conda:
+        "../envs/seqkit.yaml"
+    shell:
+        """
+        seqkit grep -v -f {input.names} {input.fa} | seqkit stats > {output}
+        """
+
+rule primary_assembly_Ngaps:
+    input:
+        fa = rules.primary_assembly_chromosomes_only.output.fa,
+    output:
+        "results/{sample}/info/{sample}_hybridPN_scaffold_{scaffold}_Ngaps.txt",
+    shell:
+        """
+        python scripts/N-detect.py {input.fa} > {output}
+        """
+
+rule primary_assembly_scaffolded_quast:
+    input:
+        rules.primary_assembly_scaffold_rename.output,
+    output:
+        "results/{sample}/info/{sample}_scaffold_{scaffold}_quast_report.tsv"
+    conda:
+        "../envs/quast.yaml"
+    benchmark:
+        "results/{sample}/benchmarks/06_{sample}_hybridPN_{scaffold}_quast_final.bench"
+    params:
+        "results/{sample}/scaffolds/{sample}_scaffold_{scaffold}_quast/"
+    shell:
+        """
+        quast.py {input} -o {params}
+        mv {params}"report.tsv" {output}
+        rm -r {params}
+        echo "Complete quast analysis of sample {wildcards.sample} scaffolds"
+        """
+
+checkpoint primary_assembly_scaffold_busco:
+    input:
+        rules.primary_assembly_scaffold_rename.output,
+    output:
+        busco_dir = directory("results/{sample}/info/{sample}_scaffold_{scaffold}_busco/"),
+    conda:
+        "../envs/busco.yaml"
+    log:
+        "results/{sample}/logs/03_{sample}_scaffold_{scaffold}_busco.log"
+    benchmark:
+        "results/{sample}/benchmarks/06_{sample}_hybridPN_{scaffold}_busco.bench"
+    params:
+        busco = config["busco"],       
+    threads: 20
+    shell:
+        """
+        busco -m genome -i {input} -o {output.busco_dir} -l {params} -c {threads} -f 2> {log}
+        echo "Complete BUSCO analysis of sample {wildcards.sample} scaffolds"
+        """
+
+def primary_assembly_scaffold_busco_output(wildcards):
+    checkpoint_output = checkpoints.primary_assembly_scaffold_busco.get(**wildcards).output[0]
+    return expand("results/{sample}/info/{sample}_scaffold_{scaffold}_busco/short_summary.{i}_busco.txt",
+                sample = wildcards.sample,
+                scaffold=wildcards.scaffold,
+                i=glob_wildcards(os.path.join(checkpoint_output, "short_summary.{i}_busco.txt")).i)
+
+rule primary_assembly_infos:
+    input:
+        contig = rules.primary_assembly_contigs_quast.output,
+        unplaced = rules.primary_assembly_unplaced.output,
+        Ngaps = rules.primary_assembly_Ngaps.output,
+        scaffold = rules.primary_assembly_scaffolded_quast.output,
+        busco = primary_assembly_scaffold_busco_output
+    output:
+        "results/{sample}/info/{sample}_hybridPN_scaffold_{scaffold}_infos.txt"
+    shell:
+        """
+        # Genome size
+        grep "Total length" {input.contig}| grep " 0 bp" | awk -F'\t' '{{print $2}}' > {output}
+        # Unplaced length
+        grep "-" {input.unplaced} | awk '{{print $5}}' | tr -d ',' >> {output}
+        # Contigs
+        grep "contigs" {input.contig} | grep " 0 bp"  | awk -F'\t' '{{print $2}}' >> {output}
+        # N50 contig stats
+        grep "N50" {input.contig} | awk -F'\t' '{{print $2}}' >> {output}
+        # Gaps
+        wc -l {input.Ngaps} | awk '{{print $1}}' >> {output}
+        # Gap length
+        sed 's/.*://g' {input.Ngaps} | awk 'SUM+=$0; END {{print SUM}}' | tail -1 >> {output}
+        # Scaffolds
+        grep "contigs" {input.scaffold} | grep " 0 bp"  | awk -F'\t' '{{print $2}}' >> {output}
+        # N50 scaffold stats
+        grep "N50" {input.scaffold} | awk -F'\t' '{{print $2}}' >> {output}
+        # Busco
+        total_busco=$(grep "Total BUSCO" {input.busco} | awk '{{print $1}}')
+        grep "(C)" {input.busco} | awk -v total="$total_busco" '{{print $1/total * 100}}' >> {output}
+        grep "(C)" {input.busco} | awk '{{print $1}}' >> {output}
+        """
+
+
+
 rule haplotype_assembly_gfa_to_fasta:
     input:
         ancient("results/{sample}/hifiasm/{sample}_hybridPN.bp.{hap}.p_ctg.gfa"),
@@ -725,6 +836,7 @@ rule haplotype_assembly_scaffoled:
         """
         cat {input} > {output}
         """
+
 
 
 
