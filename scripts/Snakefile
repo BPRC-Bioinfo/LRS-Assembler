@@ -9,7 +9,8 @@ import pandas as pd
 from pathlib import Path
 
 #configfile: "configs/trio_t2t.yaml"
-configfile: "configs/human.yaml"
+#configfile: "configs/human.yaml"
+configfile: "configs/10_chinese_macaques_mafa.yaml"
 
 SPECIES=config['species'].replace(" ", "_")
 REGIONS = config['region']
@@ -35,33 +36,59 @@ wildcard_constraints:
     scaffold = "|".join(SCAFFOLDS),
     region = "|".join(REGIONS)
 
-for sample, nano_dir in config['nanopore'].items():
-    print (f"For {sample} nanopore:")
-    for input_dir in nano_dir:
-        fastq_gz_files = glob.glob(os.path.join(input_dir, "*.fastq.gz"))
-        num_files = len(fastq_gz_files)
+def n_matches(input_dir: str, pattern: str) -> int:
+    return len(glob.glob(os.path.join(input_dir, pattern)))
 
-        if num_files > 0:
-            print(f"Found {num_files} fastq.gz files in {input_dir}.")
+def report_if_any(input_dir: str, patterns: list[tuple[str, str]]) -> None:
+    """
+    patterns: list of (label, glob_pattern)
+    Warn only if *all* patterns have 0 matches.
+    Otherwise, print Found lines only for patterns with matches.
+    """
+    counts = [(label, n_matches(input_dir, pat)) for label, pat in patterns]
+    total = sum(n for _, n in counts)
+
+    if total == 0:
+        labels = ", ".join(label for label, _ in patterns)
+        print(f"Warning: No input files ({labels}) found at {input_dir}.")
+        return
+
+    for label, n in counts:
+        if n > 0:
+            print(f"Found {n} {label} file(s) in {input_dir}.")
+
+# --- Nanopore ---
+for sample, nano_dirs in config.get("nanopore", {}).items():
+    print(f"For {sample} nanopore:")
+    for input_dir in nano_dirs:
+        report_if_any(input_dir, [
+            ("fastq.gz", "*.fastq.gz"),
+            ("bam", "*.bam"),
+        ])
+
+# --- PacBio ---
+for sample, pac_dirs in config.get("pacbio", {}).items():
+    print(f"For {sample} pacbio:")
+    for input_dir in pac_dirs:
+        n_bam = n_matches(input_dir, "*.bam")
+        n_pbi = n_matches(input_dir, "*.bam.pbi")
+        n_fq  = n_matches(input_dir, "*.fastq.gz")
+
+        if (n_bam + n_pbi + n_fq) == 0:
+            print(f"Warning: No input files (bam, bam.pbi, fastq.gz) found at {input_dir}.")
+            continue
+
+        # Print only what exists (no warnings for what's missing)
+        if n_bam and n_pbi:
+            print(f"Found {n_bam} BAM file(s) and {n_pbi} PBI file(s) in {input_dir}.")
         else:
-            print(f"Warning: No fastq.gz files found at {input_dir}.")
+            if n_bam:
+                print(f"Found {n_bam} BAM file(s) in {input_dir}.")
+            if n_pbi:
+                print(f"Found {n_pbi} PBI file(s) in {input_dir}.")
 
-for sample, pac_dir in config['pacbio'].items():
-    print (f"For {sample} pacbio:")   
-    for input_dir in pac_dir:
-        bam_files = glob.glob(os.path.join(input_dir, "*.bam"))
-        pbi_files = glob.glob(os.path.join(input_dir, "*.bam.pbi"))
-        num_bam_files = len(bam_files)
-        num_pbi_files = len(pbi_files)
-
-        if num_bam_files > 0 and num_pbi_files > 0:
-            print(f"Found {num_bam_files} BAM file(s) and {num_pbi_files} PBI file(s) in {input_dir}.")
-        elif num_bam_files > 0:
-            print(f"Found {num_bam_files} BAM file(s), but no PBI files in {input_dir}. ")
-        elif num_pbi_files > 0:
-            print(f"Found {num_pbi_files} PBI file(s), but no BAM files in {input_dir}.")
-        else:
-            print(f"Warning: No BAM or PBI files found at {input_dir}.")
+        if n_fq:
+            print(f"Found {n_fq} fastq.gz file(s) in {input_dir}.")
 
 FLANK_LOCAL = {}
 for region in REGIONS:
@@ -93,19 +120,15 @@ def check_library(region_name, library):
 
 
 
-
 rule all:
     input:
-#        expand("results/{sample}/hifiasm/{sample}_hybridPN.bp.p_ctg.gfa", sample = SAMPLES),
 #        expand("results/{sample}/annotation/{region}/{sample}_{hap}_{species}_{region}_status.csv", sample = SAMPLES, hap = ['hap1','hap2'], scaffold = SCAFFOLDS, species = SPECIES, region = REGIONS),
-#        expand("results/{sample}/annotation/{region}/final_results/{species}_{region}_{sample}_{hap}_refined.bed", sample = SAMPLES, hap = ['hap1','hap2'], scaffold = SCAFFOLDS, species = SPECIES, region = REGIONS),
 #        expand("results/{sample}/annotation/{sample}_summary.txt", sample = SAMPLES),
         expand("results/{sample}/info/{sample}_hybridPN_scaffold_{scaffold}_infos.txt", sample = SAMPLES, scaffold = SCAFFOLDS),
 #        expand("results/{sample}/info/compare_{sample}_{scaffold}_figure.png", sample = SAMPLES, scaffold = SCAFFOLDS),
         expand("results/{sample}/scaffolds/{sample}_hybridPN_{hap}_scaffolded.fa", sample = SAMPLES, hap = ['hap1','hap2']),
-        expand("results/{sample}/midway/syri/{sample}_{scaffold}_syri.png", sample = SAMPLES, scaffold = SCAFFOLDS),
-#        expand("results/{sample}/midway/purge_dups_ont/{sample}_histograph.png", sample = SAMPLES, scaffold = SCAFFOLDS),
-#        expand("results/{sample}/midway/purge_dups/{sample}_primary.purged", sample = SAMPLES)
+#        expand("results/{sample}/midway/syri/{sample}_{scaffold}_syri.png", sample = SAMPLES, scaffold = SCAFFOLDS),
+
 
 
 
@@ -211,10 +234,65 @@ rule prepare_chromosome_reference:
         """
 
 ## Process raw files
-rule nanopore_fastq_combine_filter:
+rule combine_nanopore_fastq:
     input:
         nanopore_files = lambda wildcards: [f for dir in config["nanopore"][wildcards.sample]
                                             for f in glob.glob(f"{dir}/*.fastq.gz")]
+    output:
+        temp("fastq/{sample}_nanopore_fq.fastq.gz")
+    threads: 5
+    benchmark:
+        "results/{sample}/benchmarks/01_{sample}_nanopore_combine_filter_fastq.bench"
+    conda:
+        "../envs/seqkit.yaml"
+    shell:
+        """
+        for i in {input}; do
+            cat $i
+        done | seqkit sana | seqkit seq -m 5000 | seqkit rmdup -s -o {output} || touch {output}
+        echo "The rule combine_filter_nanopore_fastq complete for sample {wildcards.sample}"
+        """
+
+rule combine_nanopore_bam:
+    input:
+        nanopore_files = lambda wildcards: [f for dir in config["nanopore"][wildcards.sample]
+                                            for f in glob.glob(f"{dir}/*.bam")]
+    output:
+        temp("fastq/{sample}_nanopore_bam.bam")
+    threads: 5
+    benchmark:
+        "results/{sample}/benchmarks/01_{sample}_nanopore_combine_bam.bench"
+    conda:
+        "../envs/samtools.yaml"
+    shell:
+        """
+        count=$(echo {input} | tr ' ' '\n' | sed '/^$/d' | wc -l)
+        if [[ $count -gt 1 ]]; then
+            samtools merge -o {output} {input}
+        else
+            cp {input} {output} || touch {output}
+        fi
+        """
+
+rule nanopore_bam_to_fastq:
+    input:
+        rules.combine_nanopore_bam.output
+    output:
+        temp("fastq/{sample}_nanopore_bam.fastq.gz")
+    threads: 5
+    benchmark:
+        "results/{sample}/benchmarks/01_{sample}_nanopore_convert_bam_to_fastq.bench"
+    conda:
+        "../envs/samtools.yaml"
+    shell:
+        """
+        samtools fastq -T MM,ML -0 {output} {input} || touch {output}
+        """
+
+rule combine_filter_nanopore_fastq:
+    input:
+        bam = rules.nanopore_bam_to_fastq.output,
+        fastq = rules.combine_nanopore_fastq.output,
     output:
         "results/{sample}/raws/{sample}_nanopore_5000.fastq.gz"
     threads: 5
@@ -224,24 +302,36 @@ rule nanopore_fastq_combine_filter:
         "../envs/seqkit.yaml"
     shell:
         """
-        if [ -z "{input}" ]; then
-            echo "No nanopore fastq files found"
-            exit
-        fi
-        for i in {input}; do
-            cat $i
-        done | seqkit sana | seqkit seq -m 5000 | seqkit rmdup -s -o {output}
-        echo "The rule combine_filter_nanopore_fastq complete for sample {wildcards.sample}"
+        cat {input} | seqkit sana | seqkit seq -m 5000 | seqkit rmdup -s -o {output}
         """
 
-rule pacbio_fastq_combine:
+rule process_pacbio_fastq:
+    input:
+        pacbio_fastq = lambda wildcards: [f for dir in config["pacbio"][wildcards.sample]
+                                            for f in glob.glob(f"{dir}/*.fastq.gz")],
+    output:
+        temp("fastq/{sample}_pacbio_raw_fq.fastq.gz")
+    threads: 8
+    benchmark:
+        "results/{sample}/benchmarks/01_{sample}_pacbio_combine_fastq.bench"
+    conda:
+        "../envs/seqkit.yaml"
+    shell:
+        """
+        for i in {input}; do
+            cat $i
+        done | seqkit sana | seqkit seq -m 5000 | seqkit rmdup -s -o {output} || touch {output}
+        echo "The rule combine_pacbio_fastq complete for sample {wildcards.sample}"
+        """
+
+rule combine_pacbio_bam:
     input:
         pacbio_bam = lambda wildcards: [f for dir in config["pacbio"][wildcards.sample]
                                             for f in glob.glob(f"{dir}/*.bam")],
         pacbio_pbi = lambda wildcards: [f for dir in config["pacbio"][wildcards.sample]
                                             for f in glob.glob(f"{dir}/*.bam.pbi")]
     output:
-        temp("fastq/{sample}_pacbio_raw.fastq.gz")
+        temp("fastq/{sample}_pacbio_raw_bam.fastq.gz")
     threads: 8
     benchmark:
         "results/{sample}/benchmarks/01_{sample}_pacbio_combine_fastq.bench"
@@ -249,17 +339,19 @@ rule pacbio_fastq_combine:
         "../envs/bam2fastx.yaml"
     shell:
         """
-        if [ -z "{input.pacbio_bam}" ]; then
-            echo "No pacbio bam files found"
-            exit
+        count=$(echo {input} | tr ' ' '\n' | sed '/^$/d' | wc -l)
+        if [[ $count -gt 0 ]]; then
+            bam2fastq -o fastq/{wildcards.sample}_pacbio_raw_bam {input.pacbio_bam}
+        else
+            touch {output}
         fi
-        bam2fastq -o fastq/{wildcards.sample}_pacbio_raw {input.pacbio_bam}
         echo "The rule combine_pacbio_fastq complete for sample {wildcards.sample}"
         """
 
-rule pacbio_fastq_filter:
+rule filter_pacbio_fastq:
     input:
-        rules.pacbio_fastq_combine.output
+        rules.combine_pacbio_bam.output,
+        rules.process_pacbio_fastq.output,
     output:
         "results/{sample}/raws/{sample}_pacbio_5000.fastq.gz"
     threads: 5
@@ -269,7 +361,7 @@ rule pacbio_fastq_filter:
         "../envs/seqkit.yaml"
     shell:
         """
-        seqkit sana {input} | seqkit seq -m 5000 | seqkit rmdup -s -o {output}
+        cat {input} | seqkit sana | seqkit seq -m 5000 | seqkit rmdup -s -o {output}
         echo "The rule filter_pacbio_fastq complete for sample {wildcards.sample}"
         """
 
@@ -292,11 +384,13 @@ rule filtered_reads_stats:
         echo "The rule filter_read_stats complete for sample {wildcards.sample} {wildcards.seqMachine}"
         """
 
+## End Process raw files
+
 ## Genome assembling
 rule hifiasmUL_de_novo:
     input:
-        nano = rules.nanopore_fastq_combine_filter.output,
-        pac = rules.pacbio_fastq_filter.output,
+        nano = rules.combine_filter_nanopore_fastq.output,
+        pac = rules.filter_pacbio_fastq.output,
     output:
         primary = "results/{sample}/hifiasm/{sample}_hybridPN.bp.p_ctg.gfa",
         hap1 = "results/{sample}/hifiasm/{sample}_hybridPN.bp.hap1.p_ctg.gfa",
@@ -508,12 +602,12 @@ rule sample_ref_syri_plot:
 rule primary_assembly_mapping_raws:
     input:
         primary = rules.primary_assembly_gfa_to_fasta.output,
-        pacbio = rules.pacbio_fastq_filter.output
+        pacbio = rules.filter_pacbio_fastq.output
     output:
         "results/{sample}/midway/purge_dups/{sample}_pacbio.paf.gz"
     conda:
         "../envs/minimap2.yaml"
-    threads: 20
+    threads: 8
     shell:
         """
         minimap2 -x map-hifi {input.primary} {input.pacbio} | gzip -c - > {output}
@@ -553,7 +647,7 @@ rule primary_assembly_purge_dups_histo_graph:
 rule primary_assembly_mapping_raws_ont:
     input:
         primary = rules.primary_assembly_gfa_to_fasta.output,
-        nanopore = rules.nanopore_fastq_combine_filter.output
+        nanopore = rules.combine_filter_nanopore_fastq.output
     output:
         "results/{sample}/midway/purge_dups_ont/{sample}_nanopore.paf.gz"
     conda:
@@ -594,7 +688,6 @@ rule primary_assembly_purge_dups_ont_histo_graph:
         """
 
 '''
-'''
 
 rule primary_assembly_purge_dups_cutoff:
     input:
@@ -610,63 +703,40 @@ rule primary_assembly_purge_dups_cutoff:
         calcuts {input} > {output} 2> {log}
         """
 
-rule primary_assembly_purge_dups_split_assembly:
-    input:
-        rules.primary_assembly_gfa_to_fasta.output,
-    output:
-        temp("results/{sample}/midway/purge_dups/{sample}_primary.split.fa"),
-    conda:
-        "../envs/purge_dups.yaml"
-    shell:
-        """
-        split_fa {input} > {output}
-        """
-
-rule primary_assembly_purge_dups_mapping_split_assemblies:
-    input:
-        rules.primary_assembly_purge_dups_split_assembly.output,
-    output:
-        "results/{sample}/midway/purge_dups/{sample}_primary.split.self.paf.gz",
-    conda:
-        "../envs/purge_dups.yaml"
-    shell:
-        """
-        minimap2 -xasm5 -DP {input} {input} | gzip -c - > {output}
-        """
-
-rule primary_assembly_purge_dups_bed:
+rule primary_assembly_purge_dups:
     input:
         cutoff = rules.primary_assembly_purge_dups_cutoff.output,
         cov = rules.primary_assembly_purge_dups_pbcstat.output.cov,
-        self_align = rules.primary_assembly_purge_dups_split_assembly.output,
+        primary = rules.primary_assembly_gfa_to_fasta.output,
+        cutoff_log = rules.primary_assembly_purge_dups_cutoff.log,
     output:
-        "results/{sample}/midway/purge_dups/{sample}_primary_purged.bed",
+        bed = "results/{sample}/midway/purge_dups/{sample}_primary_purged.bed",
+        split = temp("results/{sample}/midway/purge_dups/{sample}_primary.split.fa"),
+        self_align = "results/{sample}/midway/purge_dups/{sample}_primary.split.self.paf.gz",
+        purged = "results/{sample}/midway/{sample}.purged.fasta"
     conda:
         "../envs/purge_dups.yaml"
     log:
         "results/{sample}/logs/02_{sample}_purge_dups_bed.log"
+    params:
+        "results/{sample}/midway/{sample}"
     shell:
         """
-        purge_dups -2 -T {input.cutoff} -c {input.cov} {input.self_align} > {output} 2> purge_dups.log
+        peaks=$(grep peaks {input.cutoff_log} | awk '{print $3}')
+        if [[ $peaks -gt 1 ]]; then
+            split_fa {input.primary} > {output.split}
+            minimap2 -xasm5 -DP {output.split} {output.split} | gzip -c - > {output.self_align}
+            purge_dups -2 -T {input.cutoff} -c {input.cov} {output.self_align} > {output.bed} 2> {log}
+            get_seqs -e {output.bed} {input.primary} -p {params}
+        else
+            cp {input.primary} {output.purged}
+        fi
         """
 
-rule primary_assembly_purge_dups_split_sequences:
-    input:
-        bed = rules.primary_assembly_purge_dups_bed.output,
-        primary = rules.primary_assembly_gfa_to_fasta.output,
-    output:
-        touch("results/{sample}/midway/purge_dups/{sample}_primary.purged"),
-    conda:
-        "../envs/purge_dups.yaml"
-    shell:
-        """
-        get_seqs -e {input.bed} {input.primary}
-        """
-'''
 
 
 
-## Check if purge dups is needed here
+
 rule primary_assembly_unplaced:
     input:
         fa = rules.primary_assembly_scaffold_rename.output,
